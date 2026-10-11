@@ -1,0 +1,38 @@
+# Yapaia Kartenserver auf einem VPS.
+#
+#   cp .env.beispiel .env      # Passwort eintragen
+#   docker compose up -d                    # nur HTTP auf Port 8080
+#   docker compose --profile https up -d    # mit HTTPS (Domain in .env)
+services:
+  kartenserver:
+    image: ghcr.io/yapaia/kartenserver:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - daten:/share/yapaia
+    ports:
+      # Mit HTTPS in .env BINDEN=127.0.0.1 setzen: dann ist Port 8080 nur
+      # noch für Caddy erreichbar, nicht unverschlüsselt aus dem Netz.
+      - "${BINDEN:-0.0.0.0}:8080:8080"
+
+  # Optional: HTTPS mit automatischem Zertifikat (Let's Encrypt).
+  # Braucht eine Domain, die auf den VPS zeigt, und offene Ports 80/443.
+  https:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to kartenserver:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy:/data
+    depends_on:
+      - kartenserver
+
+volumes:
+  daten:
+  caddy:

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yapaia Kartenserver</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Yapaia Kartenserver</h1>
+    <p id="system" class="leise"></p>
+  </header>
+
+  <main>
+    <section id="laufend-bereich" hidden>
+      <h2>Läuft gerade</h2>
+      <p><strong id="laufend-titel"></strong> – <span id="laufend-schritt"></span>
+        <button id="laufend-abbrechen" class="klein">Abbrechen</button></p>
+      <pre id="protokoll" aria-live="polite"></pre>
+    </section>
+
+    <section>
+      <h2>Pakete</h2>
+      <p class="leise">Ein Paket fasst Regionen zusammen. Daraus entstehen Karte, Suchindex und Routing für Yapaia Go.</p>
+      <div id="pakete"></div>
+    </section>
+
+    <section>
+      <h2>Neues Paket</h2>
+      <form id="neu">
+        <label>Name <input id="neu-name" required maxlength="60" placeholder="z. B. Alpen 2026"></label>
+        <label>Regionen suchen <input id="neu-suche" placeholder="z. B. Bayern, Österreich, Schweiz" autocomplete="off"></label>
+        <ul id="treffer" class="treffer"></ul>
+        <div id="gewaehlt" class="chips"></div>
+        <p id="schaetzung" class="leise"></p>
+        <fieldset>
+          <legend>Bauen</legend>
+          <label class="inline"><input type="checkbox" name="teil" value="karte" checked> Karte</label>
+          <label class="inline"><input type="checkbox" name="teil" value="suche" checked> Suchindex</label>
+          <label class="inline"><input type="checkbox" name="teil" value="routing" checked> Routing</label>
+        </fieldset>
+        <button type="submit">Paket anlegen</button>
+        <p id="neu-fehler" class="fehler"></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>Verbindung für Yapaia Go</h2>
+      <p>Katalog-Adresse: <code id="katalog-url"></code></p>
+      <p>Token: <code id="token"></code> <button id="token-zeigen" class="klein">anzeigen</button></p>
+      <p class="leise">Go fragt den Katalog mit <code>Authorization: Bearer &lt;Token&gt;</code> ab und lädt daraus Karte, Suchindex und Routing.</p>
+    </section>
+
+    <section>
+      <h2>Geladene Extrakte</h2>
+      <p class="leise">OpenStreetMap-Rohdaten von Geofabrik. Sie bleiben für den nächsten Bau liegen; löschen spart Platz.</p>
+      <div id="extrakte"></div>
+    </section>
+
+    <section>
+      <h2>Aufträge</h2>
+      <div id="auftraege"></div>
+    </section>
+  </main>
+
+  <footer class="leise">Kartendaten © OpenStreetMap-Mitwirkende (ODbL) · Extrakte von Geofabrik</footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
