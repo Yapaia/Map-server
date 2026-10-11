@@ -36,8 +36,12 @@ export function konfigAus(env = process.env) {
     // Leer = aus der Anfrage ableiten (Host-Kopf, X-Forwarded-Proto).
     oeffentlicheUrl: (env.OEFFENTLICHE_URL || '').replace(/\/+$/, ''),
     geofabrikIndex: env.GEOFABRIK_INDEX || 'https://download.geofabrik.de/index-v1-nogeom.json',
-    // Die Bauskripte aus dem Go-Image
+    // Die Bauskripte aus dem Go-Image. Sie werden mit `bash` gestartet: ihre
+    // erste Zeile (`#!/command/with-contenv bash`) setzt die s6-Umgebung des
+    // Add-ons voraus, die hier nicht laeuft -- und nicht gebraucht wird, weil
+    // der Kartenserver ihnen alle Pfade selbst uebergibt.
     befehle: {
+      shell: env.BEFEHL_SHELL || 'bash',
       karte: env.BEFEHL_KARTE || '/usr/bin/yapaia-build-pmtiles',
       suche: env.BEFEHL_SUCHE || '/usr/bin/yapaia-build-lite-index',
       routing: env.BEFEHL_ROUTING || '/usr/bin/yapaia-build-graph',

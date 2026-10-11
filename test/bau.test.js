@@ -10,6 +10,7 @@ import { fakeFetch, fakeGeofabrik, pbfBytes, tempKonfig } from './helfer.js';
 /** Baut die Skripte des Go-Images nach: legen an, was die echten anlegen. */
 function fakeRun(konfig, aufrufe) {
   return async (befehl, args, { env = {}, protokoll }) => {
+    if (befehl === konfig.befehle.shell) [befehl, ...args] = args; // Skript über bash
     aufrufe.push({ befehl, args, env });
     protokoll(`lauf ${befehl.split('/').pop()}`);
     const id = args[1];
@@ -146,7 +147,7 @@ test('ein Fehler lässt das alte Paket stehen', async () => {
     const vorher = readFileSync(join(a.konfig.pfade.pakete, 'li', 'manifest.json'), 'utf-8');
     const normal = a.ctx.run;
     a.ctx.run = async (befehl, args, o) => {
-      if (befehl === a.konfig.befehle.karte) throw new Error('planetiler kaputt');
+      if (args[0] === a.konfig.befehle.karte) throw new Error('planetiler kaputt');
       return normal(befehl, args, o);
     };
     await assert.rejects(bauePaket(a.ctx), /planetiler kaputt/);

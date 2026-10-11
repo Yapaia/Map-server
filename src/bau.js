@@ -105,6 +105,8 @@ export async function bauePaket(ctx) {
   const quellPbf = join(p.quellen, `${id}.osm.pbf`);
   const lauf = (befehl, args, env = {}, extra = {}) =>
     run(befehl, args, { env: { TMPDIR: join(bau, 'tmp'), ...env }, protokoll, signal, ...extra });
+  // Die Skripte aus dem Go-Image, ueber `bash` statt ueber ihre s6-Startzeile
+  const skript = (name, args, env) => lauf(konfig.befehle.shell, [konfig.befehle[name], ...args], env);
 
   await rm(bau, { recursive: true, force: true });
   for (const d of [p.extrakte, p.quellen, bau, join(bau, 'tmp'), p.pakete, join(konfig.daten, 'valhalla', 'tiles')]) {
@@ -183,7 +185,7 @@ export async function bauePaket(ctx) {
   if (teile.includes('karte')) {
     schritt('Karte bauen');
     const kacheln = join(bau, 'karte');
-    await lauf(konfig.befehle.karte, [quellPbf, id], { TILES_DIR: kacheln, PLANETILER_SOURCES_DIR: p.quellen, YAPAIA_TOOLS_DIR: join(konfig.daten, 'tools') });
+    await skript('karte', [quellPbf, id], { TILES_DIR: kacheln, PLANETILER_SOURCES_DIR: p.quellen, YAPAIA_TOOLS_DIR: join(konfig.daten, 'tools') });
     await rename(join(kacheln, `${id}.pmtiles`), join(neu, `${id}.pmtiles`));
     dateien.karte = `${id}.pmtiles`;
   }
@@ -192,7 +194,7 @@ export async function bauePaket(ctx) {
   if (teile.includes('suche')) {
     schritt('Suchindex bauen');
     const suche = join(bau, 'suche');
-    await lauf(konfig.befehle.suche, [lagerPbf, id], { LITE_SEARCH_DB_PATH: join(suche, 'lite_search.db') });
+    await skript('suche', [lagerPbf, id], { LITE_SEARCH_DB_PATH: join(suche, 'lite_search.db') });
     await copyFile(join(suche, `lite_search-${id}.db`), join(neu, `lite_search-${id}.db`));
     dateien.suche = `lite_search-${id}.db`;
   }
@@ -201,7 +203,7 @@ export async function bauePaket(ctx) {
   if (teile.includes('routing')) {
     schritt('Routing bauen');
     const routing = join(bau, 'routing');
-    await lauf(konfig.befehle.routing, [lagerPbf, id], {
+    await skript('routing', [lagerPbf, id], {
       VALHALLA_TILES_DIR: join(routing, 'tiles'),
       VALHALLA_BUILD_THREADS: String(konfig.routingThreads),
     });
