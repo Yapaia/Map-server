@@ -1,0 +1,93 @@
+:root {
+  --text: #1c2430;
+  --leise: #5b6777;
+  --rand: #d7dde5;
+  --flaeche: #ffffff;
+  --grund: #f3f5f8;
+  --akzent: #1f6feb;
+  --fehler: #b42318;
+  --gut: #1a7f37;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e6e9ee;
+    --leise: #9aa5b4;
+    --rand: #2f3a48;
+    --flaeche: #18202a;
+    --grund: #10161d;
+    --akzent: #4d94ff;
+    --fehler: #ff7b72;
+    --gut: #56d364;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--grund);
+}
+header, main, footer { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 20px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 0 0 8px; }
+section {
+  background: var(--flaeche);
+  border: 1px solid var(--rand);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.leise { color: var(--leise); font-size: 0.92rem; }
+.fehler { color: var(--fehler); }
+.gut { color: var(--gut); }
+label { display: block; margin: 8px 0; }
+label.inline { display: inline-block; margin-right: 16px; }
+input:not([type=checkbox]) {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--grund);
+  border: 1px solid var(--rand);
+  border-radius: 8px;
+}
+fieldset { border: 1px solid var(--rand); border-radius: 8px; margin: 12px 0; }
+button {
+  font: inherit;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--akzent);
+  color: #fff;
+  cursor: pointer;
+}
+button.klein { padding: 4px 10px; font-size: 0.9rem; }
+button.zweit { background: transparent; color: var(--akzent); border: 1px solid var(--rand); }
+button:disabled { opacity: 0.5; cursor: default; }
+.treffer { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; }
+.treffer li { padding: 8px; border-bottom: 1px solid var(--rand); cursor: pointer; }
+.treffer li:hover, .treffer li:focus { background: var(--grund); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { background: var(--grund); border: 1px solid var(--rand); border-radius: 999px; padding: 4px 10px; }
+.chip button { background: none; color: var(--leise); padding: 0 0 0 6px; }
+.karte { border-top: 1px solid var(--rand); padding: 12px 0; }
+.karte:first-child { border-top: 0; padding-top: 0; }
+.knoepfe { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+pre {
+  max-height: 340px;
+  overflow: auto;
+  background: var(--grund);
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+code { word-break: break-all; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--rand); }
+footer { padding-bottom: 24px; }

@@ -1,0 +1,12 @@
+{
+  "name": "@yapaia/kartenserver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yapaia Kartenserver: baut Karten, Suchindex und Routing für Yapaia Go aus OpenStreetMap-Extrakten",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js"
+  }
+}

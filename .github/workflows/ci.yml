@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  image:
+    name: Image und echter Bau (Liechtenstein)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: tests
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: kartenserver:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Ende-zu-Ende
+        run: test/e2e.sh kartenserver:ci
+      - name: Veröffentlichen (main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag kartenserver:ci ghcr.io/yapaia/kartenserver:latest
+          docker tag kartenserver:ci ghcr.io/yapaia/kartenserver:${{ github.sha }}
+          docker push ghcr.io/yapaia/kartenserver:latest
+          docker push ghcr.io/yapaia/kartenserver:${{ github.sha }}
