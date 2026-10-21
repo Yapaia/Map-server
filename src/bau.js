@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { herunterladen, kopfdaten } from './download.js';
+import { herunterladen, istZip, kopfdaten } from './download.js';
 
 export const TEILE = ['karte', 'suche', 'routing'];
 
@@ -95,6 +95,32 @@ async function existiert(pfad) {
  *  konfig, zustand, geofabrik, paket, protokoll(text), schritt(name),
  *  signal, run (statt `ausfuehren`, fuer Tests), fetchImpl, aktualisieren
  */
+/**
+ * Laedt die Quellen aus `konfig.quellenVorab`, die noch fehlen -- mit bis zu
+ * drei Versuchen und Pausen dazwischen. Scheitert alles, versucht planetiler
+ * es danach selbst noch einmal; der Bau bricht hier also nicht ab.
+ */
+export async function quellenVorladen(ctx, { pause = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const { konfig, protokoll, signal } = ctx;
+  for (const q of konfig.quellenVorab ?? []) {
+    const ziel = join(konfig.pfade.quellen, q.datei);
+    if (await existiert(ziel)) continue;
+    for (let versuch = 1; versuch <= 3; versuch++) {
+      try {
+        protokoll(`Lade ${q.name} (${q.url}), Versuch ${versuch} von 3 …`);
+        const erg = await herunterladen(q.url, ziel, { fetchImpl: ctx.fetchImpl, signal, pruefen: istZip, art: 'ZIP-Datei' });
+        protokoll(`  ${q.name}: ${(erg.bytes / 1024 ** 2).toFixed(0)} MB`);
+        break;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        protokoll(`  ${q.name}: ${err.message}`);
+        if (versuch < 3) await pause(versuch * 15_000);
+        else protokoll(`  ${q.name}: nicht geladen – planetiler versucht es gleich selbst`);
+      }
+    }
+  }
+}
+
 export async function bauePaket(ctx) {
   const { konfig, zustand, geofabrik, paket, protokoll, schritt, signal } = ctx;
   const run = ctx.run ?? ausfuehren;
@@ -184,6 +210,7 @@ export async function bauePaket(ctx) {
   // ─── 3. Karte ────────────────────────────────────────────────────────────
   if (teile.includes('karte')) {
     schritt('Karte bauen');
+    await quellenVorladen(ctx);
     const kacheln = join(bau, 'karte');
     await skript('karte', [quellPbf, id], { TILES_DIR: kacheln, PLANETILER_SOURCES_DIR: p.quellen, YAPAIA_TOOLS_DIR: join(konfig.daten, 'tools') });
     await rename(join(kacheln, `${id}.pmtiles`), join(neu, `${id}.pmtiles`));

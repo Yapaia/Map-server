@@ -178,3 +178,47 @@ test('ausfuehren: Protokoll, Fehlercode, Abbrechen der ganzen Prozessgruppe', as
   await assert.rejects(lauf, /abgebrochen/);
   assert.ok(Date.now() - start < 5000);
 });
+
+test('Quellen vorab: lädt fehlende Wasserflächen geduldig, mit Wiederholung', async () => {
+  const { quellenVorladen } = await import('../src/bau.js');
+  const t = tempKonfig({ QUELLEN_VORAB: '1', WASSER_URL: 'https://example.test/wasser.zip' });
+  try {
+    mkdirSync(t.konfig.pfade.quellen, { recursive: true });
+    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(100, 7)]);
+    let versuche = 0;
+    const protokoll = [];
+    const fetchImpl = async () => {
+      versuche += 1;
+      if (versuche === 1) throw new Error('Zeitüberschreitung');
+      return new Response(zip, { status: 200, headers: { 'content-length': String(zip.length) } });
+    };
+    const pausen = [];
+    await quellenVorladen({ konfig: t.konfig, protokoll: (z) => protokoll.push(z), fetchImpl }, { pause: async (ms) => pausen.push(ms) });
+    assert.equal(versuche, 2);
+    assert.deepEqual(pausen, [15_000]);
+    assert.ok(readFileSync(join(t.konfig.pfade.quellen, 'water-polygons-split-3857.zip')).equals(zip));
+
+    // Liegt die Datei da, wird nichts mehr geladen.
+    await quellenVorladen({ konfig: t.konfig, protokoll: () => {}, fetchImpl: async () => assert.fail('kein Download erwartet') });
+  } finally {
+    t.aufraeumen();
+  }
+});
+
+test('Quellen vorab: scheitert alles, bricht der Bau nicht ab, eine HTML-Seite wird nicht gespeichert', async () => {
+  const { quellenVorladen } = await import('../src/bau.js');
+  const t = tempKonfig({ QUELLEN_VORAB: '1' });
+  try {
+    mkdirSync(t.konfig.pfade.quellen, { recursive: true });
+    const protokoll = [];
+    await quellenVorladen(
+      { konfig: t.konfig, protokoll: (z) => protokoll.push(z), fetchImpl: async () => new Response('<html>', { status: 200 }) },
+      { pause: async () => {} },
+    );
+    assert.ok(protokoll.some((z) => z.includes('keine ZIP-Datei')));
+    assert.ok(protokoll.at(-1).includes('planetiler versucht es gleich selbst'));
+    assert.equal(existsSync(join(t.konfig.pfade.quellen, 'water-polygons-split-3857.zip')), false);
+  } finally {
+    t.aufraeumen();
+  }
+});
