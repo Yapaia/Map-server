@@ -48,6 +48,21 @@ export function konfigAus(env = process.env) {
       osmium: env.BEFEHL_OSMIUM || 'osmium',
       tar: env.BEFEHL_TAR || 'tar',
     },
+    // Quellen, die planetiler sonst selbst laedt -- vorab und geduldig, mit
+    // Wiederholungen. planetiler fragt den Server mit kurzer Frist nach der
+    // Groesse und bricht den ganzen Bau ab, wenn er nicht sofort antwortet
+    // (gesehen bei osmdata.openstreetmap.de). Liegt die Datei schon da, laedt
+    // planetiler sie nicht noch einmal. QUELLEN_VORAB=0 schaltet das ab.
+    quellenVorab:
+      env.QUELLEN_VORAB === '0'
+        ? []
+        : [
+            {
+              name: 'Wasserflächen',
+              datei: 'water-polygons-split-3857.zip',
+              url: env.WASSER_URL || 'https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip',
+            },
+          ],
     // Valhalla baut mit mehreren Threads schneller, braucht aber mehr RAM.
     // 2 passt zu einem VPS mit 8 GB, der nichts anderes tut.
     routingThreads: Number(env.VALHALLA_BUILD_THREADS || 2),

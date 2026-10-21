@@ -36,11 +36,31 @@ async function groesse(pfad) {
   }
 }
 
+/** Ob die Datei ein ZIP-Archiv ist (beginnt mit „PK\x03\x04"). */
+export async function istZip(pfad) {
+  let fh;
+  try {
+    fh = await open(pfad, 'r');
+    const puffer = Buffer.alloc(4);
+    const { bytesRead } = await fh.read(puffer, 0, 4, 0);
+    return bytesRead === 4 && puffer.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  } catch {
+    return false;
+  } finally {
+    await fh?.close();
+  }
+}
+
 /**
  * Laedt `url` nach `ziel`. `fortschritt(geladen, gesamt)` wird laufend
- * gerufen. Gibt `{ bytes, letzteAenderung }` zurueck.
+ * gerufen. Gibt `{ bytes, letzteAenderung }` zurueck. `pruefen(pfad)` stellt
+ * fest, ob das Geladene stimmt (Standard: eine OSM-PBF).
  */
-export async function herunterladen(url, ziel, { fetchImpl = globalThis.fetch, fortschritt = () => {}, signal } = {}) {
+export async function herunterladen(
+  url,
+  ziel,
+  { fetchImpl = globalThis.fetch, fortschritt = () => {}, signal, pruefen = istOsmPbf, art = 'OSM-PBF' } = {},
+) {
   const teil = `${ziel}.part`;
   let schon = await groesse(teil);
   const kopf = schon > 0 ? { Range: `bytes=${schon}-` } : {};
@@ -48,7 +68,7 @@ export async function herunterladen(url, ziel, { fetchImpl = globalThis.fetch, f
   if (r.status === 416) {
     // Der Teil ist schon vollstaendig (oder kaputt): neu beginnen.
     await rm(teil, { force: true });
-    return herunterladen(url, ziel, { fetchImpl, fortschritt, signal });
+    return herunterladen(url, ziel, { fetchImpl, fortschritt, signal, pruefen, art });
   }
   if (!r.ok) throw new Error(`Download fehlgeschlagen (HTTP ${r.status}): ${url}`);
   if (r.status !== 206 && schon > 0) {
@@ -70,9 +90,9 @@ export async function herunterladen(url, ziel, { fetchImpl = globalThis.fetch, f
   if (gesamt && (await groesse(teil)) !== gesamt) {
     throw new Error(`Download unvollständig (${await groesse(teil)} von ${gesamt} Bytes) – beim nächsten Versuch geht es weiter`);
   }
-  if (!(await istOsmPbf(teil))) {
+  if (!(await pruefen(teil))) {
     await rm(teil, { force: true });
-    throw new Error(`Das Heruntergeladene ist keine OSM-PBF: ${url}`);
+    throw new Error(`Das Heruntergeladene ist keine ${art}: ${url}`);
   }
   await rename(teil, ziel);
   return { bytes: await groesse(ziel), letzteAenderung: r.headers.get('last-modified') };

@@ -12,7 +12,7 @@ export function pbfBytes(laenge = 4096, fuellung = 1) {
 
 export function tempKonfig(extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'kartenserver-'));
-  const konfig = konfigAus({ YAPAIA_DATEN: dir, ADMIN_PASSWORT: 'geheim', ...extra });
+  const konfig = konfigAus({ YAPAIA_DATEN: dir, ADMIN_PASSWORT: 'geheim', QUELLEN_VORAB: '0', ...extra });
   return { konfig, dir, aufraeumen: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
