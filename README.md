@@ -16,44 +16,53 @@ Home-Assistant-Rechner im Wohnmobil. Gedacht für einen VPS mit **8 GB RAM und
 
 ## Installation auf dem VPS
 
-Voraussetzung: Docker mit Compose (bei den meisten VPS-Anbietern als fertiges
-„Docker“-Image auswählbar).
+Voraussetzung: ein VPS mit 8 GB RAM, 100 GB Platte und einer Domain (z. B.
+`karten.yapaia.cloud`), deren A-Eintrag auf den VPS zeigt.
 
 ```bash
+cd /opt
 git clone https://github.com/Yapaia/map-server.git kartenserver
 cd kartenserver
-cp .env.beispiel .env
-nano .env                 # ADMIN_PASSWORT eintragen
-docker compose up -d
+sudo ./install.sh --domain karten.yapaia.cloud
 ```
 
-Dann im Browser `http://<IP-des-VPS>:8080` öffnen, Benutzer **admin**, das
-Passwort aus `.env`.
+Das Skript installiert bei Bedarf Docker, legt `.env` an, erzeugt ein
+Admin-Passwort, lädt das Image und startet den Server. Am Ende zeigt es
+Adresse, Benutzer (**admin**) und Passwort. Es ist mehrfach ausführbar;
+Passwort, Token und eigene Einträge in `.env` bleiben erhalten.
 
-> Das Image kommt fertig von `ghcr.io/yapaia/kartenserver`. Ist es (noch) nicht
-> öffentlich, baut `docker compose up -d --build` es direkt auf dem VPS.
+Die Betriebsart wählt es selbst:
 
-### Mit HTTPS (empfohlen)
+| Betriebsart | Wann | HTTPS macht |
+|---|---|---|
+| `--hinter-homebase` | Port 443 ist belegt, z. B. von der [Homebase](https://github.com/Yapaia/homebase) | die Homebase; dort `KARTEN_DOMAIN=karten.yapaia.cloud` eintragen und `docker compose up -d` |
+| `--eigenes-https` | leerer VPS | ein eigener Caddy auf 80/443 |
+| `--nur-http` | zum Ausprobieren ohne Domain | niemand: `http://<IP-des-VPS>:8080` |
 
-Mit einer Domain, die auf den VPS zeigt (z. B. `karten.example.org`):
+In den ersten beiden Fällen lauscht der Kartenserver nur auf `127.0.0.1:8080`;
+Port 8080 bleibt von außen zu.
+
+<details>
+<summary>Von Hand statt mit dem Skript</summary>
 
 ```bash
-# in .env:
-#   DOMAIN=karten.example.org
-#   OEFFENTLICHE_URL=https://karten.example.org
-#   BINDEN=127.0.0.1
-docker compose --profile https up -d
+cp .env.beispiel .env
+nano .env    # ADMIN_PASSWORT, DOMAIN, BINDEN=127.0.0.1, OEFFENTLICHE_URL=https://<domain>
+docker compose up -d                    # hinter der Homebase
+docker compose --profile https up -d    # mit eigenem HTTPS
 ```
 
-Caddy holt das Zertifikat selbst (Ports 80 und 443 müssen offen sein). Danach
-ist die Oberfläche unter `https://karten.example.org` erreichbar, und Port 8080
-steht nicht mehr unverschlüsselt im Netz.
+Das Image kommt fertig von `ghcr.io/yapaia/kartenserver`. Ist es nicht
+ladbar, baut `docker compose up -d --build` es direkt auf dem VPS.
+</details>
 
 ### Aktualisieren
 
 ```bash
-docker compose pull && docker compose up -d
+cd /opt/kartenserver && git pull && ./install.sh
 ```
+
+(oder nur `docker compose pull && docker compose up -d`)
 
 Alle Daten (Extrakte, Pakete, Einstellungen) liegen im Volume `daten` und
 bleiben erhalten.
