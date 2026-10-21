@@ -126,8 +126,32 @@ if [ "$MODUS" != eigenes-https ] && eigenes_https_laeuft; then
   say "Eigenes HTTPS wird nicht mehr gebraucht – stoppe es …"
   docker compose --profile https rm -sf https >/dev/null
 fi
+# ------------------------------------------------------------------ Bei der Homebase anmelden
+# Läuft daneben eine Homebase (/opt/homebase), trägt das Skript die Domain dort
+# ein und startet sie neu – dann holt sie das Zertifikat und leitet weiter.
+homebase_anmelden() { # homebase_anmelden SCHLUESSEL DOMAIN ZIEL_SCHLUESSEL ZIEL
+  local hb="${HOMEBASE_ORDNER:-$(dirname "$(pwd)")/homebase}"
+  [ -f "$hb/.env" ] && [ -f "$hb/docker-compose.yml" ] || return 0
+  local alt; alt="$(grep -E "^$1=" "$hb/.env" | tail -n 1 | cut -d= -f2-)"
+  local altziel; altziel="$(grep -E "^$3=" "$hb/.env" | tail -n 1 | cut -d= -f2-)"
+  [ "$alt" = "$2" ] && [ "$altziel" = "$4" ] && return 0
+  say "Trage $2 in der Homebase ($hb) ein"
+  local kv tmp
+  for kv in "$1=$2" "$3=$4"; do
+    if grep -qE "^${kv%%=*}=" "$hb/.env"; then
+      tmp="$(mktemp)"
+      awk -v k="${kv%%=*}" -v v="${kv#*=}" 'BEGIN{FS=OFS="="} $1==k{print k "=" v; next} {print}' "$hb/.env" > "$tmp"
+      cat "$tmp" > "$hb/.env"; rm -f "$tmp"
+    else
+      printf '%s\n' "$kv" >> "$hb/.env"
+    fi
+  done
+  (cd "$hb" && docker compose up -d) || printf 'Hinweis: Homebase ließ sich nicht neu starten – dort „docker compose up -d“ ausführen.\n' >&2
+}
+
 say "Starte den Kartenserver …"
 docker compose up -d
+[ "$MODUS" = hinter-homebase ] && homebase_anmelden KARTEN_DOMAIN "$DOMAIN" KARTEN_ZIEL 127.0.0.1:8080
 
 for _ in $(seq 1 30); do
   if curl -fs -o /dev/null "http://127.0.0.1:8080/" 2>/dev/null || curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/" 2>/dev/null | grep -q 401; then
@@ -140,10 +164,12 @@ echo
 say "Fertig."
 case "$MODUS" in
   hinter-homebase)
-    echo "Der Kartenserver lauscht nur auf 127.0.0.1:8080. Die Homebase macht HTTPS:"
-    echo "  In der .env der Homebase:  KARTEN_DOMAIN=$DOMAIN"
-    echo "  dann dort:                 docker compose up -d"
-    echo "Danach: https://$DOMAIN" ;;
+    echo "Der Kartenserver lauscht nur auf 127.0.0.1:8080; die Homebase macht HTTPS."
+    if [ -f "${HOMEBASE_ORDNER:-$(dirname "$(pwd)")/homebase}/.env" ]; then
+      echo "In der Homebase eingetragen. Erreichbar unter https://$DOMAIN"
+    else
+      echo "Keine Homebase daneben gefunden. Dort in .env KARTEN_DOMAIN=$DOMAIN setzen und docker compose up -d."
+    fi ;;
   eigenes-https)
     echo "Erreichbar unter https://$DOMAIN (Zertifikat kommt nach etwa einer Minute)." ;;
   nur-http)
