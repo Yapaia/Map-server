@@ -35,6 +35,13 @@ export class Zustand {
     this.auftraege = Array.isArray(daten.auftraege) ? daten.auftraege : [];
     this.downloadToken = typeof daten.downloadToken === 'string' && daten.downloadToken ? daten.downloadToken : '';
     this.extrakte = daten.extrakte && typeof daten.extrakte === 'object' ? daten.extrakte : {};
+    // Ein Neustart unterbricht auch das Prüfen eines vorgebauten Pakets.
+    for (const p of Object.values(this.pakete)) {
+      if (p.status === 'prueft') {
+        p.status = p.manifest ? 'fertig' : 'fehler';
+        p.fehler = 'Prüfen wurde durch einen Neustart unterbrochen';
+      }
+    }
   }
 
   /** Das Token fuer Go: aus der Umgebung, sonst gemerkt, sonst neu. */

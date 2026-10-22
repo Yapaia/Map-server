@@ -63,6 +63,8 @@ export class Auftraege {
   einreihen(paketId, { aktualisieren = false } = {}) {
     const paket = this.zustand.pakete[paketId];
     if (!paket) throw new Error('Unbekanntes Paket');
+    if (paket.vorgebaut) throw new Error('Ein vorgebautes Paket wird hier nicht gebaut – neu übernehmen statt bauen');
+    if (paket.status === 'prueft') throw new Error('Das Paket wird gerade geprüft');
     if (this.zustand.auftraege.some((a) => a.paket === paketId && (a.status === 'wartet' || a.status === 'laeuft'))) {
       throw new Error('Für dieses Paket läuft oder wartet schon ein Auftrag');
     }
