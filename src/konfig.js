@@ -23,6 +23,8 @@ export function konfigAus(env = process.env) {
       quellen: join(wurzel, 'quellen'),
       bau: join(wurzel, 'bau'),
       pakete: join(wurzel, 'pakete'),
+      // Vorgebaute Pakete zum Übernehmen (src/vorgebaut.js)
+      import: join(wurzel, 'import'),
       protokolle: join(wurzel, 'protokolle'),
       tmp: join(wurzel, 'tmp'),
       katalogCache: join(wurzel, 'geofabrik-index.json'),

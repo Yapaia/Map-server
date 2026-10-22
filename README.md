@@ -90,6 +90,38 @@ bleiben erhalten.
 Faustregel: Rohdaten × 12 an freiem Platz während des Baus. Über etwa 4 GB
 Rohdaten wird der Routing-Bau mit 8 GB RAM knapp; die Oberfläche warnt.
 
+## Vorgebaute Pakete übernehmen
+
+Wer die Daten schon hat – z. B. Yapaia Go im Wohnmobil –, muss sie hier nicht
+neu bauen. Auf dem Rechner mit den Daten (Node ≥ 20) je Paket:
+
+```bash
+node werkzeuge/vorbereiten.mjs --ziel /share/kartenserver-export --id germany --name Deutschland \
+  --karte /share/yapaia/tiles/germany.pmtiles --suche /share/yapaia/lite-search/lite_search-germany.db
+node werkzeuge/vorbereiten.mjs --ziel /share/kartenserver-export --id routing-de-ch-li --name "Routing DE, CH, LI" \
+  --routing /share/yapaia/valhalla --bounds 5.8,45.8,15.1,55.1
+```
+
+Das legt `<ziel>/<id>/` mit den Dateien und `manifest.json` (Größe, sha256)
+an. Karte und Suche werden hart verlinkt, das Routing als tar gepackt. Die
+`--id` bestimmt die Dateinamen in Go (`lite_search-<id>.db` usw.) – für
+dieselbe Region also dieselbe ID wie in Go. Das Routing ist **ein** Graph und
+ersetzt bei Go den ganzen bisherigen; gehören mehrere Länder dazu, ist es ein
+eigenes Paket nur mit Routing.
+
+Dann in den Import-Ordner im Volume des Kartenservers kopieren:
+
+```bash
+IMPORT=$(ssh root@vps docker volume inspect -f '{{.Mountpoint}}' kartenserver_daten)/kartenserver/import
+rsync -a --partial --info=progress2 /share/kartenserver-export/ root@vps:$IMPORT/
+```
+
+In der Oberfläche unter **Vorgebaute Pakete** „Prüfen und übernehmen“: Der
+Server prüft Größe und sha256 jeder Datei und verschiebt das Paket dann (ohne
+Kopie) zu den fertigen Paketen. Danach steht es im Katalog für Go. Vorgebaute
+Pakete werden hier nicht neu gebaut; für neue Daten wieder vorbereiten,
+kopieren und übernehmen.
+
 ## Für Yapaia Go
 
 | | |

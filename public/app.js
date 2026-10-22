@@ -33,14 +33,17 @@ async function api(pfad, optionen = {}) {
   return daten;
 }
 
-const STATUS = { neu: 'noch nicht gebaut', wartet: 'wartet', baut: 'wird gebaut', fertig: 'fertig', fehler: 'Fehler' };
+const STATUS = { neu: 'noch nicht gebaut', wartet: 'wartet', baut: 'wird gebaut', fertig: 'fertig', fehler: 'Fehler', prueft: 'wird geprüft' };
 
 // ─── Pakete ────────────────────────────────────────────────────────────────
 let katalog = [];
 const namen = (id) => katalog.find((k) => k.id === id)?.name ?? id;
 
+let pruefend = false;
+
 async function paketeZeigen() {
   const pakete = await api('/api/pakete');
+  pruefend = pakete.some((p) => p.status === 'prueft');
   const ziel = $('#pakete');
   ziel.replaceChildren();
   if (!pakete.length) {
@@ -58,14 +61,14 @@ async function paketeZeigen() {
         ' ',
         el('span', { class: p.status === 'fehler' ? 'fehler' : p.status === 'fertig' ? 'gut' : 'leise' }, `(${STATUS[p.status] ?? p.status})`),
         el('div', { class: 'leise' }, p.regionen.map(namen).join(', ')),
-        m ? el('div', { class: 'leise' }, `Gebaut ${zeit(m.gebaut)} – ${teile}`) : null,
-        p.fehler && p.status === 'fehler' ? el('div', { class: 'fehler' }, p.fehler) : null,
+        m ? el('div', { class: 'leise' }, `${p.vorgebaut ? 'Vorgebaut' : 'Gebaut'} ${zeit(m.gebaut)} – ${teile}`) : null,
+        p.fehler && (p.status === 'fehler' || p.vorgebaut) ? el('div', { class: 'fehler' }, p.fehler) : null,
         el(
           'div',
           { class: 'knoepfe' },
-          el('button', { onclick: () => bauen(p.id, false), disabled: p.status === 'baut' || p.status === 'wartet' }, m ? 'Neu bauen' : 'Bauen'),
-          m ? el('button', { class: 'zweit', onclick: () => bauen(p.id, true), disabled: p.status === 'baut' || p.status === 'wartet' }, 'Mit neuen Daten bauen') : null,
-          el('button', { class: 'zweit', onclick: () => loeschen(p) }, 'Löschen'),
+          p.vorgebaut ? null : el('button', { onclick: () => bauen(p.id, false), disabled: p.status === 'baut' || p.status === 'wartet' }, m ? 'Neu bauen' : 'Bauen'),
+          m && !p.vorgebaut ? el('button', { class: 'zweit', onclick: () => bauen(p.id, true), disabled: p.status === 'baut' || p.status === 'wartet' }, 'Mit neuen Daten bauen') : null,
+          el('button', { class: 'zweit', onclick: () => loeschen(p), disabled: p.status === 'prueft' }, 'Löschen'),
         ),
       ),
     );
@@ -154,6 +157,36 @@ $('#neu').addEventListener('submit', async (e) => {
 });
 
 // ─── Extrakte, Aufträge, Status ────────────────────────────────────────────
+async function vorgebautZeigen() {
+  const liste = await api('/api/vorgebaut');
+  const ziel = $('#vorgebaut');
+  ziel.replaceChildren();
+  if (!liste.length) return ziel.append(el('p', { class: 'leise' }, 'Nichts im Import-Ordner.'));
+  for (const v of liste) {
+    const teile = Object.entries(v.artefakte).map(([t, a]) => `${{ karte: 'Karte', suche: 'Suche', routing: 'Routing' }[t] ?? t} ${groesse(a.bytes)}`).join(' · ');
+    ziel.append(
+      el(
+        'div',
+        { class: 'karte' },
+        el('strong', {}, v.name),
+        ` (${v.id})`,
+        el('div', { class: 'leise' }, teile),
+        v.fehler ? el('div', { class: 'fehler' }, v.fehler) : null,
+        el('div', { class: 'knoepfe' }, el('button', { onclick: () => uebernehmen(v.id), disabled: !!v.fehler }, 'Prüfen und übernehmen')),
+      ),
+    );
+  }
+}
+
+async function uebernehmen(id) {
+  try {
+    await api(`/api/vorgebaut/${encodeURIComponent(id)}`, { method: 'POST' });
+    await allesZeigen();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 async function extrakteZeigen() {
   const liste = await api('/api/extrakte');
   const ziel = $('#extrakte');
@@ -270,7 +303,7 @@ async function statusZeigen() {
 }
 
 async function allesZeigen() {
-  await Promise.all([statusZeigen(), paketeZeigen(), extrakteZeigen(), auftraegeZeigen()]);
+  await Promise.all([statusZeigen(), paketeZeigen(), vorgebautZeigen(), extrakteZeigen(), auftraegeZeigen()]);
 }
 
 async function start() {
@@ -284,7 +317,7 @@ async function start() {
     try {
       const wechsel = await statusZeigen();
       await protokollNachladen();
-      if (wechsel || letzterLaufend) await Promise.all([paketeZeigen(), auftraegeZeigen(), extrakteZeigen()]);
+      if (wechsel || letzterLaufend || pruefend) await Promise.all([paketeZeigen(), vorgebautZeigen(), auftraegeZeigen(), extrakteZeigen()]);
     } catch {
       // Server kurz weg -- beim nächsten Takt wieder
     }

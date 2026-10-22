@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { kopfdaten } from './download.js';
 import { TEILE, platzBedarf } from './bau.js';
 import { ID_MUSTER, idAusName } from './zustand.js';
+import { uebernehmen as uebernehmenStandard, vorgebauteListe } from './vorgebaut.js';
 
 const OEFFENTLICH = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const DATEITYPEN = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
@@ -105,7 +106,7 @@ export function katalogEintrag(manifest, basis) {
   };
 }
 
-export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImpl }) {
+export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImpl, uebernehmen = uebernehmenStandard }) {
   const token = () => zustand.token(konfig.downloadToken);
 
   const datei = async (req, res, pfad, typ, download) => {
@@ -216,11 +217,52 @@ export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImp
       }
       if (!m[2] && methode === 'DELETE') {
         if (paket.status === 'baut' || paket.status === 'wartet') return fehler(res, 409, 'Erst den Auftrag abbrechen');
+        if (paket.status === 'prueft') return fehler(res, 409, 'Das Paket wird gerade geprüft');
         delete zustand.pakete[id];
         zustand.speichern();
         await rm(join(konfig.pfade.pakete, id), { recursive: true, force: true });
         return json(res, 200, { ok: true });
       }
+    }
+    if (pfad === '/api/vorgebaut' && methode === 'GET') return json(res, 200, await vorgebauteListe(konfig));
+    m = /^\/api\/vorgebaut\/([^/]+)$/.exec(pfad);
+    if (m && methode === 'POST') {
+      const id = decodeURIComponent(m[1]);
+      if (!ID_MUSTER.test(id)) return fehler(res, 400, 'Ungültige Paket-ID');
+      const vorher = zustand.pakete[id];
+      if (vorher && ['baut', 'wartet', 'prueft'].includes(vorher.status)) return fehler(res, 409, 'Für dieses Paket läuft gerade etwas');
+      if (vorher && !vorher.vorgebaut && vorher.manifest) return fehler(res, 409, `„${id}" ist ein hier gebautes Paket – erst löschen`);
+      const eintrag = (zustand.pakete[id] = {
+        id,
+        name: vorher?.name ?? id,
+        regionen: vorher?.regionen ?? [],
+        teile: vorher?.teile ?? [],
+        vorgebaut: true,
+        erstellt: vorher?.erstellt ?? new Date().toISOString(),
+        ...(vorher?.manifest ? { manifest: vorher.manifest } : {}),
+        status: 'prueft',
+      });
+      zustand.speichern();
+      // Das Prüfen (sha256 über viele GB) dauert -- im Hintergrund.
+      uebernehmen({ konfig, id }).then(
+        (manifest) => {
+          Object.assign(eintrag, {
+            name: manifest.name,
+            regionen: (manifest.regionen ?? []).map((r) => (typeof r === 'string' ? r : r.id)).filter(Boolean),
+            teile: Object.keys(manifest.artefakte),
+            manifest,
+            status: 'fertig',
+          });
+          delete eintrag.fehler;
+          zustand.speichern();
+        },
+        (err) => {
+          eintrag.status = eintrag.manifest ? 'fertig' : 'fehler';
+          eintrag.fehler = err.message;
+          zustand.speichern();
+        },
+      );
+      return json(res, 202, eintrag);
     }
     if (pfad === '/api/auftraege' && methode === 'GET') return json(res, 200, auftraege.liste());
     m = /^\/api\/auftraege\/([^/]+)\/(protokoll|abbrechen)$/.exec(pfad);
