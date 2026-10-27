@@ -34,6 +34,13 @@ const { values: a } = parseArgs({
     routing: { type: 'string' },
     bounds: { type: 'string' },
     regionen: { type: 'string' },
+    // Suche und Routing mit zstd packen (Karte nicht: PMTiles ist schon
+    // komprimiert). Gemessen an der Schweiz: Suche auf 25 %, Routing auf 33 %
+    // -- halbiert Speicher und Datenvolumen. Go entpackt ab 0.64.0.
+    // Stufe 6: Suche 27 %, Routing 38 % bei ~45 MB/s. Stufe 19 spart nur noch
+    // 4 Prozentpunkte, ist aber ~40-mal langsamer (gemessen 2026-10-27).
+    zstd: { type: 'boolean', default: false },
+    'zstd-stufe': { type: 'string', default: '6' },
   },
 });
 
@@ -106,11 +113,31 @@ if (a.routing) {
 
 if (!bounds || bounds.length !== 4 || !bounds.every(Number.isFinite)) abbruch('bounds unbekannt – bitte --bounds W,S,O,N angeben');
 
+const entpackt = {};
+if (a.zstd) {
+  for (const teil of ['suche', 'routing']) {
+    if (!dateien[teil]) continue;
+    const pfad = join(ordner, dateien[teil]);
+    entpackt[teil] = statSync(pfad).size;
+    console.log(`Packe ${dateien[teil]} mit zstd -${a['zstd-stufe']} …`);
+    // --rm entfernt nur den Eintrag im Paketordner (bei der Suche ein harter
+    // Link) -- die Quelle bleibt.
+    const r = spawnSync('zstd', ['-q', '-T0', `-${a['zstd-stufe']}`, '--rm', '-f', '-o', `${pfad}.zst`, pfad], { stdio: 'inherit' });
+    if (r.status !== 0) abbruch(`zstd ist fehlgeschlagen (${dateien[teil]}) – ist zstd installiert?`);
+    dateien[teil] = `${dateien[teil]}.zst`;
+  }
+}
+
 const artefakte = {};
 for (const [teil, datei] of Object.entries(dateien)) {
   const pfad = join(ordner, datei);
   console.log(`sha256 ${datei} …`);
-  artefakte[teil] = { datei, bytes: statSync(pfad).size, sha256: await sha256(pfad) };
+  artefakte[teil] = {
+    datei,
+    bytes: statSync(pfad).size,
+    sha256: await sha256(pfad),
+    ...(entpackt[teil] ? { komprimiert: 'zstd', bytesEntpackt: entpackt[teil] } : {}),
+  };
 }
 const manifest = {
   id: a.id,
