@@ -184,33 +184,47 @@ karte() { # <id> <pbf>
   [ -s "$ziel/$id.pmtiles" ]
 }
 
+# 60 % des RAMs, der dem Container zusteht (cgroup-Grenze oder MemTotal).
+heap_mb() {
+  local m c
+  m=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)
+  c=$(cat /sys/fs/cgroup/memory.max 2>/dev/null)
+  [[ "$c" =~ ^[0-9]+$ ]] && [ $((c / 1048576)) -lt "$m" ] && m=$((c / 1048576))
+  echo $((m * 60 / 100))
+}
+
 suche() { # <id> <pbf> -- dieselben Schritte wie yapaia-build-lite-index in Go
   local id=$1 pbf=$2 ziel=$ROH/$1 w=$BAU/tmp/suche-$1
+  [ -s "$pbf" ] || { echo "Extrakt fehlt: $pbf"; return 1; }
   rm -rf "$w"; mkdir -p "$w" "$ziel"
   local poi named
   mapfile -t poi < <(node "$LITE_CLI" --print-osmium-filters)
   mapfile -t named < <(node "$LITE_CLI" --print-named-filters)
   [ "${#poi[@]}" -gt 0 ] && [ "${#named[@]}" -gt 0 ] || return 1
   local ort="n/place=city,town,village,suburb,quarter,borough,hamlet" lz4=(-f pbf,pbf_compression=lz4)
-  set -e
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/vorab.osm.pbf" "$pbf" "$ort" w/highway "${poi[@]}" nwr/name nwr/addr:housenumber
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/places.osm.pbf" "$w/vorab.osm.pbf" "$ort"
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/streets.osm.pbf" "$w/vorab.osm.pbf" w/highway
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/pois.osm.pbf" "$w/vorab.osm.pbf" "${poi[@]}"
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/named-all.osm.pbf" "$w/vorab.osm.pbf" nwr/name
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/named.osm.pbf" "$w/named-all.osm.pbf" "${named[@]}"
-  nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/addresses.osm.pbf" "$w/vorab.osm.pbf" nwr/addr:housenumber
+  # Jeder Befehl mit `x`: bricht beim ersten Fehler ab. `set -e` wirkt hier
+  # nicht -- der Schritt läuft im if-Kontext von schritt().
+  x() { "$@" || { echo "FEHLER bei: $*"; exit 1; }; }
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/vorab.osm.pbf" "$pbf" "$ort" w/highway "${poi[@]}" nwr/name nwr/addr:housenumber
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/places.osm.pbf" "$w/vorab.osm.pbf" "$ort"
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/streets.osm.pbf" "$w/vorab.osm.pbf" w/highway
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/pois.osm.pbf" "$w/vorab.osm.pbf" "${poi[@]}"
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/named-all.osm.pbf" "$w/vorab.osm.pbf" nwr/name
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/named.osm.pbf" "$w/named-all.osm.pbf" "${named[@]}"
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/addresses.osm.pbf" "$w/vorab.osm.pbf" nwr/addr:housenumber
   rm -f "$w/vorab.osm.pbf" "$w/named-all.osm.pbf"
-  nice -n 19 osmium export --overwrite --geometry-types=point -f geojsonseq -o "$w/places.geojsonseq" "$w/places.osm.pbf"
-  nice -n 19 osmium export --overwrite --geometry-types=linestring,polygon -f geojsonseq -o "$w/streets.geojsonseq" "$w/streets.osm.pbf"
+  x nice -n 19 osmium export --overwrite --geometry-types=point -f geojsonseq -o "$w/places.geojsonseq" "$w/places.osm.pbf"
+  x nice -n 19 osmium export --overwrite --geometry-types=linestring,polygon -f geojsonseq -o "$w/streets.geojsonseq" "$w/streets.osm.pbf"
   for f in pois named addresses; do
-    nice -n 19 osmium export --overwrite --geometry-types=point,linestring,polygon -f geojsonseq -o "$w/$f.geojsonseq" "$w/$f.osm.pbf"
+    x nice -n 19 osmium export --overwrite --geometry-types=point,linestring,polygon -f geojsonseq -o "$w/$f.geojsonseq" "$w/$f.osm.pbf"
   done
   rm -f "$w"/*.osm.pbf
-  (cd /app && nice -n 19 node "$LITE_CLI" --places "$w/places.geojsonseq" --streets "$w/streets.geojsonseq" \
+  # Der Index-Bau haelt alle Datensaetze im Speicher. Node gibt sich im
+  # Container sonst nur ~2,3 GB Heap -- zu wenig fuer Deutschland und
+  # Frankreich (gemessen 2026-10-28: „JavaScript heap out of memory“).
+  x bash -c "cd /app && exec \"\$@\"" _ nice -n 19 node --max-old-space-size="$(heap_mb)" "$LITE_CLI" --places "$w/places.geojsonseq" --streets "$w/streets.geojsonseq" \
     --pois "$w/pois.geojsonseq" --named "$w/named.geojsonseq" --addresses "$w/addresses.geojsonseq" \
-    --out "$ziel/lite_search.db" --region "$id")
-  set +e
+    --out "$ziel/lite_search.db" --region "$id"
   rm -rf "$w"
   [ -s "$ziel/lite_search-$id.db" ]
 }
@@ -284,13 +298,17 @@ for id in "${IDS[@]}"; do
   url=$(jq -r --arg i "$id" '.[] | select(.id == $i) | .url' "$LAENDER_JSON")
   pbf=$QUELLEN/laender/$id.osm.pbf
   if [ ! -f "$STAND/$id-paket.ok" ]; then
+    # Fehlt der Extrakt (gelöscht, abgebrochen), muss er neu geladen werden.
+    [ -s "$pbf" ] || rm -f "$STAND/$id-download.ok"
     schritt "$id-download" lade "$url" "$pbf" &&
       schritt "$id-karte" karte "$id" "$pbf" &&
       schritt "$id-suche" suche "$id" "$pbf" &&
       schritt "$id-routing" routing_land "$id" &&
       schritt "$id-paket" paket "$id" "$name"
   fi
-  rm -f "$pbf"   # Extrakt wird nicht mehr gebraucht
+  # Extrakt nur weg, wenn das Paket fertig ist -- ein übersprungenes Land
+  # braucht ihn beim nächsten Versuch wieder.
+  [ -f "$STAND/$id-paket.ok" ] && rm -f "$pbf"
 done
 
 status "FERTIG: $(ls "$PAKETE" | wc -l) Pakete in $PAKETE ($(du -sh "$PAKETE" | cut -f1)), $(frei_gb) GB frei"

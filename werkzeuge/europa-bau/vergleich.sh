@@ -64,7 +64,7 @@ suche_lauf() {
   osmium export --overwrite --geometry-types=point -f geojsonseq -o $w/places.geojsonseq $w/places.pbf
   osmium export --overwrite --geometry-types=linestring,polygon -f geojsonseq -o $w/streets.geojsonseq $w/streets.pbf
   for x in pois named addresses; do osmium export --overwrite --geometry-types=point,linestring,polygon -f geojsonseq -o $w/$x.geojsonseq $w/$x.pbf; done
-  cd /app && node $CLI --places $w/places.geojsonseq --streets $w/streets.geojsonseq --pois $w/pois.geojsonseq \
+  cd /app && node --max-old-space-size=$(( $(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo) * 60 / 100 )) $CLI --places $w/places.geojsonseq --streets $w/streets.geojsonseq --pois $w/pois.geojsonseq \
     --named $w/named.geojsonseq --addresses $w/addresses.geojsonseq --out $w/lite_search.db --region ch
 }
 suche=$(dauer suche_lauf)
