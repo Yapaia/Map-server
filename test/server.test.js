@@ -151,4 +151,6 @@ test('Hilfen', () => {
   const e = katalogEintrag({ id: 'x', name: 'X', bounds: [0, 0, 1, 1], artefakte: { routing: { datei: 'x-routing.tar', bytes: 5, sha256: 's' } } }, 'https://h');
   assert.equal(e.sizeBytes, 0);
   assert.deepEqual(e.routing, { url: 'https://h/v1/pakete/x/x-routing.tar', sizeBytes: 5, sha256: 's' });
+  const z = katalogEintrag({ id: 'x', name: 'X', bounds: [0, 0, 1, 1], artefakte: { routing: { datei: 'x-routing.tar.zst', bytes: 5, sha256: 's', komprimiert: 'zstd', bytesEntpackt: 9 } } }, 'https://h');
+  assert.deepEqual(z.routing, { url: 'https://h/v1/pakete/x/x-routing.tar.zst', sizeBytes: 5, sha256: 's', komprimiert: 'zstd', entpacktBytes: 9 });
 });

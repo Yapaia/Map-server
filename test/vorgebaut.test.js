@@ -44,6 +44,19 @@ test('manifestFehler: nur bekannte Teile mit den erwarteten Dateinamen', () => {
   assert.match(manifestFehler(null, 'x'), /fehlt/);
 });
 
+test('manifestFehler: Suche und Routing dürfen zstd-gepackt sein, die Karte nicht', () => {
+  const sha = 'a'.repeat(64);
+  const mit = (artefakte) => ({ id: 'x', name: 'X', bounds: [0, 0, 1, 1], artefakte });
+  assert.equal(manifestFehler(mit({
+    suche: { datei: 'lite_search-x.db.zst', bytes: 1, sha256: sha, komprimiert: 'zstd', bytesEntpackt: 4 },
+    routing: { datei: 'x-routing.tar.zst', bytes: 1, sha256: sha, komprimiert: 'zstd', bytesEntpackt: 3 },
+  }), 'x'), null);
+  assert.match(manifestFehler(mit({ suche: { datei: 'lite_search-x.db', bytes: 1, sha256: sha, komprimiert: 'zstd', bytesEntpackt: 4 } }), 'x'), /muss „lite_search-x.db.zst"/);
+  assert.match(manifestFehler(mit({ suche: { datei: 'lite_search-x.db.zst', bytes: 1, sha256: sha, komprimiert: 'zstd' } }), 'x'), /bytesEntpackt/);
+  assert.match(manifestFehler(mit({ suche: { datei: 'lite_search-x.db.xz', bytes: 1, sha256: sha, komprimiert: 'xz', bytesEntpackt: 4 } }), 'x'), /unbekannter Komprimierung/);
+  assert.match(manifestFehler(mit({ karte: { datei: 'x.pmtiles.zst', bytes: 1, sha256: sha, komprimiert: 'zstd', bytesEntpackt: 4 } }), 'x'), /unbekannter Komprimierung/);
+});
+
 test('uebernehmen prüft Größe und sha256 und verschiebt den Ordner', async () => {
   const t = tempKonfig();
   try {

@@ -35,7 +35,13 @@ export function manifestFehler(manifest, id) {
   if (!artefakte.length) return 'manifest.json: keine Dateien (artefakte)';
   for (const [teil, a] of artefakte) {
     if (!DATEINAMEN[teil]) return `manifest.json: unbekannter Teil „${teil}"`;
-    if (a?.datei !== DATEINAMEN[teil](id)) return `manifest.json: ${teil} muss „${DATEINAMEN[teil](id)}" heißen`;
+    // Suche und Routing dürfen zstd-gepackt sein (`<name>.zst`, komprimiert: "zstd").
+    if (a?.komprimiert !== undefined && (a.komprimiert !== 'zstd' || teil === 'karte')) {
+      return `manifest.json: ${teil} mit unbekannter Komprimierung „${a.komprimiert}"`;
+    }
+    const soll = DATEINAMEN[teil](id) + (a?.komprimiert === 'zstd' ? '.zst' : '');
+    if (a?.datei !== soll) return `manifest.json: ${teil} muss „${soll}" heißen`;
+    if (a.komprimiert && (!Number.isInteger(a.bytesEntpackt) || a.bytesEntpackt <= 0)) return `manifest.json: ${teil} ohne bytesEntpackt`;
     if (!Number.isInteger(a.bytes) || a.bytes <= 0) return `manifest.json: ${teil} ohne Größe`;
     if (typeof a.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(a.sha256)) return `manifest.json: ${teil} ohne sha256`;
   }

@@ -90,7 +90,15 @@ export function katalogEintrag(manifest, basis) {
   const url = (datei) => `${basis}/v1/pakete/${manifest.id}/${encodeURIComponent(datei)}`;
   const teil = (t) => {
     const a = manifest.artefakte?.[t];
-    return a ? { url: url(a.datei), sizeBytes: a.bytes, sha256: a.sha256 } : undefined;
+    if (!a) return undefined;
+    // komprimiert: Go (ab 0.64.0) entpackt nach dem Laden; ältere Go-Versionen
+    // kennen das Feld nicht -- deshalb trägt der Dateiname die Endung .zst.
+    return {
+      url: url(a.datei),
+      sizeBytes: a.bytes,
+      sha256: a.sha256,
+      ...(a.komprimiert ? { komprimiert: a.komprimiert, entpacktBytes: a.bytesEntpackt } : {}),
+    };
   };
   const karte = manifest.artefakte?.karte;
   return {

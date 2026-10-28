@@ -1,0 +1,35 @@
+# Europa-Bau für den Kartenserver -- auf einem eigenen Rechner/einer eigenen VM.
+#
+#   cd werkzeuge/europa-bau
+#   docker compose up -d --build          # Bau starten (setzt nach Neustart fort)
+#   docker compose logs -f bau            # mitlesen; Stand: $BAU_PFAD/STATUS.txt
+#   MODUS=vergleich docker compose run --rm bau   # Rechner vermessen (~30–60 min)
+#
+# Alles landet in BAU_PFAD (Default ./daten): Quellen, Zwischendateien,
+# fertige Pakete (pakete/<land>/ mit manifest.json) und die Messwerte.
+services:
+  bau:
+    build:
+      context: ..
+      dockerfile: europa-bau/Dockerfile
+    image: yapaia-europa-bau
+    restart: unless-stopped
+    environment:
+      LAENDER: ${LAENDER:-}
+      THREADS: ${THREADS:-}
+      PLANETILER_XMX: ${PLANETILER_XMX:-}
+      MIN_FREI_GB: ${MIN_FREI_GB:-40}
+      MODUS: ${MODUS:-}
+    volumes:
+      - ${BAU_PFAD:-./daten}:/bau
+
+  # Liest nur Systemzahlen mit (alle 5 min nach messung.csv) – für die Auswertung.
+  messung:
+    image: yapaia-europa-bau
+    restart: unless-stopped
+    command: ["bash", "/opt/europa-bau/messen.sh"]
+    cpus: 0.2
+    mem_limit: 128m
+    volumes:
+      - ${BAU_PFAD:-./daten}:/bau
+    depends_on: [bau]
