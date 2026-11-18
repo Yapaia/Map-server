@@ -45,6 +45,7 @@ PLANETILER_QUELLEN=$BAU/planetiler-quellen
 LITE_CLI=/app/apps/core/dist/lite-index.js
 QUELLE_URL=${QUELLE_URL:-https://download.geofabrik.de/europe-latest.osm.pbf}
 EUROPA_PBF=$QUELLEN/europe-latest.osm.pbf
+GRENZEN=$BAU/grenzen.geojsonseq
 MIN_FREI_GB=${MIN_FREI_GB:-40}
 
 [ "${MODUS:-}" = vergleich ] && exec "$W/vergleich.sh"
@@ -193,6 +194,21 @@ heap_mb() {
   echo $((m * 60 / 100))
 }
 
+grenzen() { # Ländergrenzen (admin_level=2) EINMAL aus dem Europa-Extrakt
+  # Seit Go 0.70.4 bestimmt Go aus dem Suchindex das Land der Position (Sensor
+  # „Land“, z. B. für den SIM-Wechsel an der Grenze). Ein Landesextrakt enthält
+  # nur die EIGENE Grenzrelation vollständig -- deshalb hier aus Europa: jedes
+  # Länderpaket bekommt ALLE Länder und erkennt so auch die Nachbarn.
+  local w=$BAU/tmp/grenzen
+  rm -rf "$w"; mkdir -p "$w"
+  nice -n 19 osmium tags-filter --overwrite -f pbf,pbf_compression=lz4 -o "$w/grenzen.osm.pbf" "$EUROPA_PBF" r/admin_level=2 || return 1
+  nice -n 19 osmium export --overwrite --geometry-types=polygon -f geojsonseq -o "$w/grenzen.geojsonseq" "$w/grenzen.osm.pbf" || return 1
+  [ -s "$w/grenzen.geojsonseq" ] || return 1
+  mv "$w/grenzen.geojsonseq" "$GRENZEN"
+  rm -rf "$w"
+  echo "Laendergrenzen: $(wc -l < "$GRENZEN") Flaechen"
+}
+
 suche() { # <id> <pbf> -- dieselben Schritte wie yapaia-build-lite-index in Go
   local id=$1 pbf=$2 ziel=$ROH/$1 w=$BAU/tmp/suche-$1
   [ -s "$pbf" ] || { echo "Extrakt fehlt: $pbf"; return 1; }
@@ -218,13 +234,21 @@ suche() { # <id> <pbf> -- dieselben Schritte wie yapaia-build-lite-index in Go
   for f in pois named addresses; do
     x nice -n 19 osmium export --overwrite --geometry-types=point,linestring,polygon -f geojsonseq -o "$w/$f.geojsonseq" "$w/$f.osm.pbf"
   done
+  # Ländergrenzen: die aus Europa (Schritt „grenzen“); im Testmodus ohne
+  # Europa-Extrakt aus dem Landesextrakt (dann nur das eigene Land).
+  local grenzen=$GRENZEN
+  if [ ! -s "$grenzen" ]; then
+    grenzen=$w/grenzen.geojsonseq
+    x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/grenzen.osm.pbf" "$pbf" r/admin_level=2
+    x nice -n 19 osmium export --overwrite --geometry-types=polygon -f geojsonseq -o "$grenzen" "$w/grenzen.osm.pbf"
+  fi
   rm -f "$w"/*.osm.pbf
   # Der Index-Bau haelt alle Datensaetze im Speicher. Node gibt sich im
   # Container sonst nur ~2,3 GB Heap -- zu wenig fuer Deutschland und
   # Frankreich (gemessen 2026-10-28: „JavaScript heap out of memory“).
   x bash -c "cd /app && exec \"\$@\"" _ nice -n 19 node --max-old-space-size="$(heap_mb)" "$LITE_CLI" --places "$w/places.geojsonseq" --streets "$w/streets.geojsonseq" \
     --pois "$w/pois.geojsonseq" --named "$w/named.geojsonseq" --addresses "$w/addresses.geojsonseq" \
-    --out "$ziel/lite_search.db" --region "$id"
+    --grenzen "$grenzen" --out "$ziel/lite_search.db" --region "$id"
   rm -rf "$w"
   [ -s "$ziel/lite_search-$id.db" ]
 }
@@ -279,6 +303,8 @@ if [ ! -f "$STAND/datenstand" ]; then
   [ -s "$STAND/datenstand" ] || date -u -r "$EUROPA_PBF" +%FT%TZ > "$STAND/datenstand"
   echo "europa-$(cut -c1-10 "$STAND/datenstand")" > "$STAND/bau-id"
 fi
+
+schritt grenzen grenzen
 
 # Der Routing-Bau braucht in der Spitze rund 120 GB Zwischendateien.
 [ -f "$STAND/routing-initialize.ok" ] || warte_auf_platz 150
