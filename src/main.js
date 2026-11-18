@@ -21,6 +21,10 @@ server.listen(konfig.port, () => {
   if (!konfig.adminPasswort) console.warn('ACHTUNG: ADMIN_PASSWORT fehlt – die Oberfläche bleibt gesperrt.');
 });
 
-const ende = () => server.close(() => process.exit(0));
+const ende = () => {
+  // Noch nicht gespeicherte Zählerstände der Zugänge sichern.
+  if (zustand.speicherTimer) zustand.speichern();
+  server.close(() => process.exit(0));
+};
 process.on('SIGTERM', ende);
 process.on('SIGINT', ende);

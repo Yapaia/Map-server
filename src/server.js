@@ -4,7 +4,8 @@
  *
  *   /                      Oberflaeche              Benutzer `admin` + ADMIN_PASSWORT
  *   /api/...               ihre Schnittstelle       dto.
- *   /v1/katalog            Pakete fuer Go           Authorization: Bearer <Token> (oder ?token=)
+ *   /v1/katalog            Pakete fuer Go           Authorization: Bearer <Token> (oder ?token=);
+ *                                                   Haupt-Token oder ein aktiver benannter Zugang
  *   /v1/pakete/<id>/<datei> Herunterladen, mit Range dto.
  *   /gesund                Lebenszeichen            offen
  */
@@ -117,12 +118,14 @@ export function katalogEintrag(manifest, basis) {
 export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImpl, uebernehmen = uebernehmenStandard }) {
   const token = () => zustand.token(konfig.downloadToken);
 
+  /** Liefert die Datei aus; Ergebnis: die angefragten Bytes (0 bei HEAD/Fehler). */
   const datei = async (req, res, pfad, typ, download) => {
     let info;
     try {
       info = await stat(pfad);
     } catch {
-      return fehler(res, 404, 'Nicht gefunden');
+      fehler(res, 404, 'Nicht gefunden');
+      return 0;
     }
     const kopf = {
       'Content-Type': typ,
@@ -133,22 +136,35 @@ export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImp
     const bereich = bereichAus(req.headers.range, info.size);
     if (bereich === null) {
       res.writeHead(416, { 'Content-Range': `bytes */${info.size}` });
-      return res.end();
+      res.end();
+      return 0;
     }
     if (bereich) {
       res.writeHead(206, { ...kopf, 'Content-Range': `bytes ${bereich.start}-${bereich.ende}/${info.size}`, 'Content-Length': bereich.ende - bereich.start + 1 });
-      if (req.method === 'HEAD') return res.end();
-      return createReadStream(pfad, { start: bereich.start, end: bereich.ende }).pipe(res);
+      if (req.method === 'HEAD') {
+        res.end();
+        return 0;
+      }
+      createReadStream(pfad, { start: bereich.start, end: bereich.ende }).pipe(res);
+      return bereich.ende - bereich.start + 1;
     }
     res.writeHead(200, { ...kopf, 'Content-Length': info.size });
-    if (req.method === 'HEAD') return res.end();
+    if (req.method === 'HEAD') {
+      res.end();
+      return 0;
+    }
     createReadStream(pfad).pipe(res);
+    return info.size;
   };
 
   const fuerGo = async (req, res, url) => {
     const vorgelegt = (req.headers.authorization || '').replace(/^Bearer /, '') || url.searchParams.get('token');
-    if (!gleich(vorgelegt, token())) return fehler(res, 401, 'Token fehlt oder falsch');
+    // Haupt-Token (Yapaia Go, unverändert) oder ein aktiver benannter Zugang.
+    const haupt = gleich(vorgelegt, token());
+    const zugang = haupt ? null : zustand.zugangZu(vorgelegt);
+    if (!haupt && !zugang) return fehler(res, 401, 'Token fehlt oder falsch');
     if (url.pathname === '/v1/katalog' && req.method === 'GET') {
+      if (zugang) zustand.nutzung(zugang, { katalog: 1 });
       const basis = basisUrl(req, konfig);
       return json(res, 200, Object.values(zustand.pakete).filter((p) => p.manifest).map((p) => katalogEintrag(p.manifest, basis)));
     }
@@ -159,7 +175,9 @@ export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImp
       // Nur, was das Manifest nennt -- nie ein beliebiger Pfad.
       const erlaubt = manifest && (name === 'manifest.json' || Object.values(manifest.artefakte).some((a) => a.datei === name));
       if (!erlaubt) return fehler(res, 404, 'Nicht gefunden');
-      return datei(req, res, join(konfig.pfade.pakete, id, name), name.endsWith('.json') ? 'application/json' : 'application/octet-stream', name);
+      const bytes = await datei(req, res, join(konfig.pfade.pakete, id, name), name.endsWith('.json') ? 'application/json' : 'application/octet-stream', name);
+      if (zugang) zustand.nutzung(zugang, req.method === 'GET' && res.statusCode < 300 ? { downloads: 1, bytes } : {});
+      return;
     }
     return fehler(res, 404, 'Nicht gefunden');
   };
@@ -182,6 +200,35 @@ export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImp
       });
     }
     if (pfad === '/api/katalog' && methode === 'GET') return json(res, 200, await geofabrik.liste());
+    // Benannte Zugänge: der Hash bleibt im Server, das Token gibt es nur beim Anlegen.
+    const ohneHash = ({ hash, ...z }) => z;
+    if (pfad === '/api/zugaenge' && methode === 'GET') return json(res, 200, Object.values(zustand.zugaenge).map(ohneHash));
+    if (pfad === '/api/zugaenge' && methode === 'POST') {
+      const k = await koerper(req);
+      const name = String(k.name || '').trim().slice(0, 80);
+      const id = idAusName(name);
+      if (!name || !id) return fehler(res, 400, 'Bitte einen Namen angeben (Buchstaben oder Ziffern)');
+      if (zustand.zugaenge[id]) return fehler(res, 409, `Einen Zugang „${id}" gibt es schon`);
+      const { zugang, token: neu } = zustand.zugangAnlegen(id, name);
+      return json(res, 201, { ...ohneHash(zugang), token: neu });
+    }
+    const z = /^\/api\/zugaenge\/([^/]+)$/.exec(pfad);
+    if (z) {
+      const zugang = zustand.zugaenge[decodeURIComponent(z[1])];
+      if (!zugang) return fehler(res, 404, 'Unbekannter Zugang');
+      if (methode === 'PATCH') {
+        const k = await koerper(req);
+        if (typeof k.aktiv !== 'boolean') return fehler(res, 400, 'aktiv (true/false) fehlt');
+        zugang.aktiv = k.aktiv;
+        zustand.speichern();
+        return json(res, 200, ohneHash(zugang));
+      }
+      if (methode === 'DELETE') {
+        delete zustand.zugaenge[zugang.id];
+        zustand.speichern();
+        return json(res, 200, { ok: true });
+      }
+    }
     if (pfad === '/api/katalog/groesse' && methode === 'GET') {
       const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean).slice(0, 50);
       const eintraege = await Promise.all(
