@@ -52,7 +52,7 @@ async function paketeZeigen() {
   }
   for (const p of pakete) {
     const m = p.manifest;
-    const teile = m ? Object.entries(m.artefakte).map(([t, a]) => `${{ karte: 'Karte', suche: 'Suche', routing: 'Routing' }[t]} ${groesse(a.bytes)}`).join(' · ') : '';
+    const teile = m ? Object.entries(m.artefakte).map(([t, a]) => `${{ karte: 'Karte', suche: 'Suche', routing: 'Routing', mbtiles: 'MBTiles' }[t] ?? t} ${groesse(a.bytes)}`).join(' · ') : '';
     ziel.append(
       el(
         'div',
@@ -163,7 +163,7 @@ async function vorgebautZeigen() {
   ziel.replaceChildren();
   if (!liste.length) return ziel.append(el('p', { class: 'leise' }, 'Nichts im Import-Ordner.'));
   for (const v of liste) {
-    const teile = Object.entries(v.artefakte).map(([t, a]) => `${{ karte: 'Karte', suche: 'Suche', routing: 'Routing' }[t] ?? t} ${groesse(a.bytes)}`).join(' · ');
+    const teile = Object.entries(v.artefakte).map(([t, a]) => `${{ karte: 'Karte', suche: 'Suche', routing: 'Routing', mbtiles: 'MBTiles' }[t] ?? t} ${groesse(a.bytes)}`).join(' · ');
     ziel.append(
       el(
         'div',

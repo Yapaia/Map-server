@@ -9,6 +9,12 @@
  *   node vorbereiten.mjs --ziel /share/kartenserver-export --id routing-dach --name "Routing DE, CH, LI" \
  *     --routing /share/yapaia/valhalla --bounds 5.8,45.8,15.1,55.1
  *
+ *   node vorbereiten.mjs --ziel daten/pakete --id dach-mbtiles --name "DACH (MBTiles)" \
+ *     --mbtiles daten/roh/dach/dach.mbtiles
+ *
+ * MBTiles sind für andere Projekte (benannte Zugänge, z. B. CarNine) -- Go
+ * bekommt Pakete, die nur MBTiles enthalten, im Katalog nicht zu sehen.
+ *
  * Legt `<ziel>/<id>/` an: die Dateien unter den Namen, die der Kartenserver
  * und Go erwarten (Karte und Suche als harter Link, wenn möglich -- kein
  * zusätzlicher Platz), das Routing als tar (`tiles/` + `build-info.json`) und
@@ -32,6 +38,7 @@ const { values: a } = parseArgs({
     karte: { type: 'string' },
     suche: { type: 'string' },
     routing: { type: 'string' },
+    mbtiles: { type: 'string' },
     bounds: { type: 'string' },
     regionen: { type: 'string' },
     // Suche und Routing mit zstd packen (Karte nicht: PMTiles ist schon
@@ -51,7 +58,7 @@ function abbruch(text) {
 
 if (!a.ziel || !a.id || !a.name) abbruch('--ziel, --id und --name sind nötig');
 if (!ID_MUSTER.test(a.id)) abbruch('--id: nur a-z, 0-9, - und _');
-if (!a.karte && !a.suche && !a.routing) abbruch('mindestens --karte, --suche oder --routing angeben');
+if (!a.karte && !a.suche && !a.routing && !a.mbtiles) abbruch('mindestens --karte, --suche, --routing oder --mbtiles angeben');
 
 /** bounds aus dem Kopf einer PMTiles-v3-Datei: [W, S, O, N]. */
 function pmtilesBounds(pfad) {
@@ -61,6 +68,18 @@ function pmtilesBounds(pfad) {
   closeSync(fd);
   if (kopf.toString('latin1', 0, 7) !== 'PMTiles' || kopf[7] !== 3) abbruch(`${pfad} ist keine PMTiles-v3-Datei`);
   return [102, 106, 110, 114].map((o) => kopf.readInt32LE(o) / 1e7);
+}
+
+/** bounds aus den Metadaten einer MBTiles-Datei (Zeile „bounds“: W,S,O,N). */
+async function mbtilesBounds(pfad) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(pfad, { readOnly: true });
+  try {
+    const zeile = db.prepare("SELECT value FROM metadata WHERE name = 'bounds'").get();
+    return zeile ? String(zeile.value).split(',').map(Number) : null;
+  } finally {
+    db.close();
+  }
 }
 
 async function sha256(pfad) {
@@ -91,6 +110,12 @@ if (a.karte) {
   verlinken(a.karte, join(ordner, dateien.karte));
   bounds ??= pmtilesBounds(a.karte);
   staende.push(statSync(a.karte).mtimeMs);
+}
+if (a.mbtiles) {
+  dateien.mbtiles = `${a.id}.mbtiles`;
+  verlinken(a.mbtiles, join(ordner, dateien.mbtiles));
+  bounds ??= await mbtilesBounds(a.mbtiles);
+  staende.push(statSync(a.mbtiles).mtimeMs);
 }
 if (a.suche) {
   dateien.suche = `lite_search-${a.id}.db`;
