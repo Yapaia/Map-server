@@ -170,6 +170,14 @@ Routing als **Valhalla**-Kacheln (tar). Suche und Routing können
 **zstd**-gepackt sein (Feld `komprimiert: "zstd"`, Dateiendung `.zst`,
 `entpacktBytes`). Kartendaten © OpenStreetMap-Mitwirkende (ODbL).
 
+Zusätzlich gibt es die Karte als **MBTiles** (gleiche Vektorkacheln, aus den
+PMTiles umgewandelt) in eigenen Paketen `<land>-mbtiles` und als
+DACH-Gesamtkarte `dach-mbtiles` (Deutschland, Österreich, Schweiz,
+Liechtenstein aus einem Guss) – Teil `mbtiles` im Katalog. Diese Pakete sieht
+nur ein benannter Zugang; Yapaia Go bekommt sie mit dem Haupt-Token nicht
+angezeigt. Routing-Pakete nennen die Valhalla-Version in `build-info.json`
+(Feld `valhalla`).
+
 ## Entwicklung
 
 ```bash

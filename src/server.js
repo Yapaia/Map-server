@@ -112,7 +112,13 @@ export function katalogEintrag(manifest, basis) {
     regionen: manifest.regionen,
     ...(teil('suche') ? { suche: teil('suche') } : {}),
     ...(teil('routing') ? { routing: teil('routing') } : {}),
+    ...(teil('mbtiles') ? { mbtiles: teil('mbtiles') } : {}),
   };
+}
+
+/** Pakete, mit denen Go etwas anfangen kann (nicht nur MBTiles). */
+export function fuerGoNutzbar(manifest) {
+  return ['karte', 'suche', 'routing'].some((t) => manifest.artefakte?.[t]);
 }
 
 export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImpl, uebernehmen = uebernehmenStandard }) {
@@ -166,7 +172,10 @@ export function erstelleServer({ konfig, zustand, geofabrik, auftraege, fetchImp
     if (url.pathname === '/v1/katalog' && req.method === 'GET') {
       if (zugang) zustand.nutzung(zugang, { katalog: 1 });
       const basis = basisUrl(req, konfig);
-      return json(res, 200, Object.values(zustand.pakete).filter((p) => p.manifest).map((p) => katalogEintrag(p.manifest, basis)));
+      // Go (Haupt-Token) sieht reine MBTiles-Pakete nicht -- es könnte sie
+      // nicht nutzen. Benannte Zugänge (andere Projekte) sehen alles.
+      const pakete = Object.values(zustand.pakete).filter((p) => p.manifest && (zugang || fuerGoNutzbar(p.manifest)));
+      return json(res, 200, pakete.map((p) => katalogEintrag(p.manifest, basis)));
     }
     const m = /^\/v1\/pakete\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if (m && (req.method === 'GET' || req.method === 'HEAD')) {

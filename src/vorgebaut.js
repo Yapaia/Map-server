@@ -19,6 +19,8 @@ export const DATEINAMEN = {
   karte: (id) => `${id}.pmtiles`,
   suche: (id) => `lite_search-${id}.db`,
   routing: (id) => `${id}-routing.tar`,
+  // Nur für andere Projekte (benannte Zugänge), Go nutzt PMTiles
+  mbtiles: (id) => `${id}.mbtiles`,
 };
 
 function gueltigeBox(b) {
@@ -36,7 +38,7 @@ export function manifestFehler(manifest, id) {
   for (const [teil, a] of artefakte) {
     if (!DATEINAMEN[teil]) return `manifest.json: unbekannter Teil „${teil}"`;
     // Suche und Routing dürfen zstd-gepackt sein (`<name>.zst`, komprimiert: "zstd").
-    if (a?.komprimiert !== undefined && (a.komprimiert !== 'zstd' || teil === 'karte')) {
+    if (a?.komprimiert !== undefined && (a.komprimiert !== 'zstd' || teil === 'karte' || teil === 'mbtiles')) {
       return `manifest.json: ${teil} mit unbekannter Komprimierung „${a.komprimiert}"`;
     }
     const soll = DATEINAMEN[teil](id) + (a?.komprimiert === 'zstd' ? '.zst' : '');

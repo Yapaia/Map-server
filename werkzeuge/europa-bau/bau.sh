@@ -6,7 +6,10 @@
 #   1. Europa-Extrakt laden (fortsetzbar, md5 geprüft)
 #   2. Routing: EIN Valhalla-Graph für Europa, Stufe für Stufe
 #   3. je Land: Extrakt laden, Karte (planetiler), Suche (Lite-Index),
-#      Routing-Kacheln aus dem Europa-Graphen schneiden, Paket schnüren
+#      Routing-Kacheln aus dem Europa-Graphen schneiden, Paket schnüren;
+#      dazu die Karte als MBTiles (aus den PMTiles umgewandelt) im Paket <land>-mbtiles
+#   4. DACH-Karte aus einem Guss als MBTiles (Paket dach-mbtiles) -- nur für
+#      andere Projekte (z. B. CarNine), Go bekommt MBTiles-Pakete nicht zu sehen
 #
 # Läuft im Container (docker compose, restart: unless-stopped) und setzt nach
 # jedem Neustart dort fort, wo er aufgehört hat: jeder fertige Schritt hat eine
@@ -173,16 +176,41 @@ xmx() {
   awk '/^MemTotal:/ { m = int($2 / 1024 * 0.4); if (m < 2048) m = 2048; if (m > 8192) m = 8192; print m "m" }' /proc/meminfo
 }
 
-karte() { # <id> <pbf>
+karte() { # <id> <pbf> [ausgabe] -- Endung .pmtiles oder .mbtiles
   local id=$1 pbf=$2 ziel=$ROH/$1
+  local aus=${3:-$ziel/$id.pmtiles}
   mkdir -p "$ziel" "$BAU/tmp/planetiler-$id"
   planetiler_jar || return 1
   nice -n 19 java "-Xmx$(xmx)" -jar "$PLANETILER_JAR" \
-    --osm-path="$pbf" --output="$ziel/$id.pmtiles" --force \
+    --osm-path="$pbf" --output="$aus" --force \
     --nodemap-type=sortedtable --download --download_dir="$PLANETILER_QUELLEN" \
     --tmpdir="$BAU/tmp/planetiler-$id" || return 1
   rm -rf "$BAU/tmp/planetiler-$id"
-  [ -s "$ziel/$id.pmtiles" ]
+  [ -s "$aus" ]
+}
+
+mbtiles() { # <id> -- die fertige Karte als MBTiles (für CarNine), ohne zweiten planetiler-Lauf
+  local id=$1 q=$ROH/$1/$1.pmtiles z=$ROH/$1/$1.mbtiles
+  [ -s "$q" ] || { echo "Karte fehlt: $q"; return 1; }
+  rm -f "$z" "$z.part"
+  nice -n 19 node "$W/pmtiles-zu-mbtiles.mjs" "$q" "$z.part" || return 1
+  mv "$z.part" "$z"
+}
+
+mbtiles_paket() { # <paket-id> <name> <mbtiles> <regionen, z. B. germany,austria>
+  rm -rf "${PAKETE:?}/$1"
+  node "$W/vorbereiten.mjs" --ziel "$PAKETE" --id "$1" --name "$2" --mbtiles "$3" --regionen "$4"
+}
+
+dach() { # DE+AT+CH(+LI) aus einem Guss -- Geofabrik-Polygon „dach“ auf den Europa-Extrakt
+  local w=$BAU/tmp/dach
+  rm -rf "$w"; mkdir -p "$w"
+  curl -sSfL -o "$w/index-v1.json" https://download.geofabrik.de/index-v1.json || return 1
+  jq '{type: "FeatureCollection", features: [.features[] | select(.properties.id == "dach")]}' "$w/index-v1.json" > "$w/dach.geojson" || return 1
+  [ "$(jq '.features | length' "$w/dach.geojson")" = 1 ] || { echo "Polygon dach fehlt im Geofabrik-Index"; return 1; }
+  nice -n 19 osmium extract --overwrite --strategy=smart -p "$w/dach.geojson" -f pbf,pbf_compression=lz4 -o "$w/dach.osm.pbf" "$EUROPA_PBF" || return 1
+  karte dach "$w/dach.osm.pbf" "$ROH/dach/dach.mbtiles" || return 1
+  rm -rf "$w"
 }
 
 # 60 % des RAMs, der dem Container zusteht (cgroup-Grenze oder MemTotal).
@@ -242,13 +270,22 @@ suche() { # <id> <pbf> -- dieselben Schritte wie yapaia-build-lite-index in Go
     x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/grenzen.osm.pbf" "$pbf" r/admin_level=2
     x nice -n 19 osmium export --overwrite --geometry-types=polygon -f geojsonseq -o "$grenzen" "$w/grenzen.osm.pbf"
   fi
+  # Fahrzeug-Beschränkungen (seit Go 0.71.0): Höhe, Gewicht, Breite, Länge,
+  # Achslast an Wegen und Knoten -- aus dem Landesextrakt, weil die Wege ihre
+  # Knoten brauchen. Die Filter liefert das Werkzeug selbst.
+  local beschr
+  mapfile -t beschr < <(node "$LITE_CLI" --print-beschraenkung-filters)
+  [ "${#beschr[@]}" -gt 0 ] || { echo "FEHLER: keine Filter fuer Fahrzeug-Beschraenkungen"; exit 1; }
+  x nice -n 19 osmium tags-filter --overwrite "${lz4[@]}" -o "$w/beschraenkungen.osm.pbf" "$pbf" "${beschr[@]}"
+  x nice -n 19 osmium export --overwrite --geometry-types=point,linestring --add-unique-id=type_id -f geojsonseq \
+    -o "$w/beschraenkungen.geojsonseq" "$w/beschraenkungen.osm.pbf"
   rm -f "$w"/*.osm.pbf
   # Der Index-Bau haelt alle Datensaetze im Speicher. Node gibt sich im
   # Container sonst nur ~2,3 GB Heap -- zu wenig fuer Deutschland und
   # Frankreich (gemessen 2026-10-28: „JavaScript heap out of memory“).
   x bash -c "cd /app && exec \"\$@\"" _ nice -n 19 node --max-old-space-size="$(heap_mb)" "$LITE_CLI" --places "$w/places.geojsonseq" --streets "$w/streets.geojsonseq" \
     --pois "$w/pois.geojsonseq" --named "$w/named.geojsonseq" --addresses "$w/addresses.geojsonseq" \
-    --grenzen "$grenzen" --out "$ziel/lite_search.db" --region "$id"
+    --grenzen "$grenzen" --beschraenkungen "$w/beschraenkungen.geojsonseq" --out "$ziel/lite_search.db" --region "$id"
   rm -rf "$w"
   [ -s "$ziel/lite_search-$id.db" ]
 }
@@ -290,7 +327,8 @@ if [ -n "${TEST_LAND:-}" ]; then
   pbf=$QUELLEN/laender/$id.osm.pbf
   schritt "$id-download" lade "$url" "$pbf" && schritt "$id-karte" karte "$id" "$pbf" &&
     schritt "$id-suche" suche "$id" "$pbf" && schritt "$id-routing" routing_land "$id" &&
-    schritt "$id-paket" paket "$id" "$name"
+    schritt "$id-paket" paket "$id" "$name" && schritt "$id-mbtiles" mbtiles "$id" &&
+    schritt "$id-mbtiles-paket" mbtiles_paket "$id-mbtiles" "$name (MBTiles)" "$ROH/$id/$id.mbtiles" "$id"
   exit $?
 fi
 
@@ -332,10 +370,18 @@ for id in "${IDS[@]}"; do
       schritt "$id-routing" routing_land "$id" &&
       schritt "$id-paket" paket "$id" "$name"
   fi
+  # MBTiles aus der fertigen Karte, als eigenes Paket (Go lädt es nicht)
+  if [ -f "$STAND/$id-paket.ok" ]; then
+    schritt "$id-mbtiles" mbtiles "$id" &&
+      schritt "$id-mbtiles-paket" mbtiles_paket "$id-mbtiles" "$name (MBTiles)" "$ROH/$id/$id.mbtiles" "$id"
+  fi
   # Extrakt nur weg, wenn das Paket fertig ist -- ein übersprungenes Land
   # braucht ihn beim nächsten Versuch wieder.
   [ -f "$STAND/$id-paket.ok" ] && rm -f "$pbf"
 done
+
+schritt dach-karte dach &&
+  schritt dach-paket mbtiles_paket dach-mbtiles "DACH (MBTiles)" "$ROH/dach/dach.mbtiles" germany,austria,switzerland,liechtenstein
 
 status "FERTIG: $(ls "$PAKETE" | wc -l) Pakete in $PAKETE ($(du -sh "$PAKETE" | cut -f1)), $(frei_gb) GB frei"
 log "FERTIG"

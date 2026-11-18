@@ -168,6 +168,18 @@ test('benannte Zugänge: anlegen, nutzen, zählen, sperren, löschen', async () 
 
     const bearer = { Authorization: `Bearer ${z.token}` };
     assert.equal((await s.holen('/v1/katalog', { headers: bearer })).status, 200);
+
+    // Reine MBTiles-Pakete: nur für benannte Zugänge, Go sieht sie nicht
+    s.zustand.pakete['dach-mbtiles'] = {
+      id: 'dach-mbtiles', name: 'DACH (MBTiles)', regionen: [], status: 'fertig',
+      manifest: { id: 'dach-mbtiles', name: 'DACH (MBTiles)', bounds: [5.8, 45.8, 17.2, 55.1], gebaut: '2026-11-18T00:00:00Z', regionen: [], artefakte: { mbtiles: { datei: 'dach-mbtiles.mbtiles', bytes: 7, sha256: 'def' } } },
+    };
+    const fremd = await (await s.holen('/v1/katalog', { headers: bearer })).json();
+    assert.deepEqual(fremd.map((p) => p.id).sort(), ['dach-mbtiles', 'li']);
+    assert.match(fremd.find((p) => p.id === 'dach-mbtiles').mbtiles.url, /\/v1\/pakete\/dach-mbtiles\/dach-mbtiles\.mbtiles$/);
+    const go = await (await s.holen('/v1/katalog', { headers: { Authorization: 'Bearer go-token' } })).json();
+    assert.deepEqual(go.map((p) => p.id), ['li'], 'Go sieht keine reinen MBTiles-Pakete');
+    delete s.zustand.pakete['dach-mbtiles'];
     assert.equal((await s.holen('/v1/katalog', { headers: { Authorization: 'Bearer go-token' } })).status, 200, 'Haupt-Token geht weiter');
     assert.equal((await s.holen('/v1/katalog', { headers: { Authorization: `Bearer ${z.token}x` } })).status, 401);
     assert.equal(await (await s.holen(`/v1/pakete/li/li.pmtiles?token=${z.token}`)).text(), '0123456789');
@@ -175,7 +187,7 @@ test('benannte Zugänge: anlegen, nutzen, zählen, sperren, löschen', async () 
     await s.holen('/v1/pakete/li/li.pmtiles', { method: 'HEAD', headers: bearer });
 
     const [liste] = await (await s.holen('/api/zugaenge', { headers: s.admin })).json();
-    assert.equal(liste.katalogAbrufe, 1);
+    assert.equal(liste.katalogAbrufe, 2);
     assert.equal(liste.downloads, 2);
     assert.equal(liste.bytes, 14);
     assert.ok(liste.letzteNutzung);
