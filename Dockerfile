@@ -5,7 +5,7 @@
 # Suchindex-Bau und die Skripte yapaia-build-*). So baut der Server
 # Byte-genau, was Go erwartet -- und eine neue Go-Version bringt den
 # Kartenserver mit einem Versions-Bump hier auf denselben Stand.
-ARG GO_VERSION=0.45.0
+ARG GO_VERSION=0.70.4
 ARG ARCH=amd64
 FROM ghcr.io/yapaia/yapaia-go-${ARCH}:${GO_VERSION}
 
