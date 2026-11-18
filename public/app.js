@@ -275,6 +275,75 @@ $('#laufend-abbrechen').addEventListener('click', async () => {
   }
 });
 
+// ─── Zugänge für andere Projekte ─────────────────────────────────────────────
+async function zugaengeZeigen() {
+  const liste = await api('/api/zugaenge');
+  const ziel = $('#zugaenge');
+  ziel.replaceChildren();
+  if (!liste.length) return ziel.append(el('p', { class: 'leise' }, 'Noch kein Zugang.'));
+  ziel.append(
+    el(
+      'table',
+      {},
+      el('tr', {}, el('th', {}, 'Name'), el('th', {}, 'Status'), el('th', {}, 'Zuletzt'), el('th', {}, 'Katalog'), el('th', {}, 'Downloads'), el('th', {}, 'Übertragen'), el('th', {})),
+      liste.map((z) =>
+        el(
+          'tr',
+          {},
+          el('td', {}, z.name),
+          el('td', {}, z.aktiv ? 'aktiv' : 'gesperrt'),
+          el('td', {}, z.letzteNutzung ? zeit(z.letzteNutzung) : '–'),
+          el('td', {}, String(z.katalogAbrufe ?? 0)),
+          el('td', {}, String(z.downloads ?? 0)),
+          el('td', {}, z.bytes ? groesse(z.bytes) : '–'),
+          el(
+            'td',
+            {},
+            el('button', { class: 'klein zweit', onclick: () => zugangAendern(z, { method: 'PATCH', body: JSON.stringify({ aktiv: !z.aktiv }) }) }, z.aktiv ? 'Sperren' : 'Entsperren'),
+            ' ',
+            el('button', { class: 'klein zweit', onclick: () => confirm(`Zugang „${z.name}" löschen?`) && zugangAendern(z, { method: 'DELETE' }) }, 'Löschen'),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+async function zugangAendern(z, optionen) {
+  try {
+    await api(`/api/zugaenge/${encodeURIComponent(z.id)}`, optionen);
+    await zugaengeZeigen();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+$('#zugang-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#zugang-fehler').textContent = '';
+  try {
+    const z = await api('/api/zugaenge', { method: 'POST', body: JSON.stringify({ name: $('#zugang-name').value }) });
+    $('#zugang-name').value = '';
+    $('#zugang-neu-name').textContent = z.name;
+    $('#zugang-neu-token').textContent = z.token;
+    $('#zugang-neu').hidden = false;
+    $('#zugang-kopieren').textContent = 'kopieren';
+    await zugaengeZeigen();
+  } catch (err) {
+    $('#zugang-fehler').textContent = err.message;
+  }
+});
+
+$('#zugang-kopieren').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('#zugang-neu-token').textContent);
+    $('#zugang-kopieren').textContent = 'kopiert';
+  } catch {
+    // ohne HTTPS kein Zugriff auf die Zwischenablage -- dann markieren
+    getSelection().selectAllChildren($('#zugang-neu-token'));
+  }
+});
+
 let tokenText = '';
 $('#token-zeigen').addEventListener('click', () => {
   $('#token').textContent = tokenText;
@@ -303,7 +372,7 @@ async function statusZeigen() {
 }
 
 async function allesZeigen() {
-  await Promise.all([statusZeigen(), paketeZeigen(), vorgebautZeigen(), extrakteZeigen(), auftraegeZeigen()]);
+  await Promise.all([statusZeigen(), paketeZeigen(), vorgebautZeigen(), extrakteZeigen(), auftraegeZeigen(), zugaengeZeigen()]);
 }
 
 async function start() {
@@ -317,6 +386,7 @@ async function start() {
     try {
       const wechsel = await statusZeigen();
       await protokollNachladen();
+      await zugaengeZeigen();
       if (wechsel || letzterLaufend || pruefend) await Promise.all([paketeZeigen(), vorgebautZeigen(), auftraegeZeigen(), extrakteZeigen()]);
     } catch {
       // Server kurz weg -- beim nächsten Takt wieder

@@ -59,6 +59,21 @@
     </section>
 
     <section>
+      <h2>Zugänge für andere Projekte</h2>
+      <p class="leise">Eigene Token je Projekt (z. B. CarNine) – einzeln sperrbar. Das Token wird nur beim Anlegen angezeigt.</p>
+      <div id="zugaenge"></div>
+      <form id="zugang-form">
+        <input id="zugang-name" placeholder="Name, z. B. CarNine" maxlength="80" required>
+        <button type="submit">Zugang anlegen</button>
+      </form>
+      <div id="zugang-neu" hidden>
+        <p>Token für <strong id="zugang-neu-name"></strong> – jetzt kopieren, es wird nicht noch einmal angezeigt:</p>
+        <p><code id="zugang-neu-token"></code> <button id="zugang-kopieren" class="klein" type="button">kopieren</button></p>
+      </div>
+      <p id="zugang-fehler" class="fehler"></p>
+    </section>
+
+    <section>
       <h2>Geladene Extrakte</h2>
       <p class="leise">OpenStreetMap-Rohdaten von Geofabrik. Sie bleiben für den nächsten Bau liegen; löschen spart Platz.</p>
       <div id="extrakte"></div>

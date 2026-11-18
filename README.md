@@ -141,6 +141,35 @@ und `routing` (je `url`, `sizeBytes`, `sha256`):
 | `lite_search-<paket>.db` | `/share/yapaia/lite-search/` |
 | `<paket>-routing.tar` | entpackt nach `/share/yapaia/valhalla/` (`tiles/` + `build-info.json`) |
 
+## Für andere Projekte (benannte Zugänge)
+
+Externe Projekte (z. B. CarNine) bekommen einen **eigenen Zugang** statt des
+Haupt-Tokens: in der Oberfläche unter „Zugänge für andere Projekte“ mit Namen
+anlegen. Das Token (zufällig, 32 Byte, base64url) wird nur beim Anlegen angezeigt
+– gespeichert ist nur sein Hash. Jeder Zugang lässt sich einzeln sperren,
+entsperren und löschen; gesperrt oder gelöscht heißt sofort `401`. Je Zugang
+zeigt die Oberfläche letzte Nutzung, Katalog-Abrufe, Downloads und übertragene
+Bytes (bei `Range` die angefragten Bytes). Das Haupt-Token für Yapaia Go bleibt
+davon unberührt.
+
+| | |
+|---|---|
+| Adresse | `https://karten.yapaia.cloud` (bzw. `OEFFENTLICHE_URL`) |
+| Katalog | `GET /v1/katalog` – JSON-Liste aller fertigen Pakete mit Download-URLs, Größen, `sha256` |
+| Download | `GET /v1/pakete/<paket>/<datei>` (auch `HEAD`) – `Range` wird unterstützt (fortsetzbar) |
+| Anmeldung | `Authorization: Bearer <token>` oder `?token=<token>` |
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" https://karten.yapaia.cloud/v1/katalog
+curl -H "Authorization: Bearer $TOKEN" -C - -O https://karten.yapaia.cloud/v1/pakete/<paket>/<datei>
+```
+
+Die Pakete sind auf Yapaia Go zugeschnitten: Karte als **PMTiles**
+(Vektorkacheln, OpenMapTiles-Schema), Suche als **SQLite**-Lite-Suchindex,
+Routing als **Valhalla**-Kacheln (tar). Suche und Routing können
+**zstd**-gepackt sein (Feld `komprimiert: "zstd"`, Dateiendung `.zst`,
+`entpacktBytes`). Kartendaten © OpenStreetMap-Mitwirkende (ODbL).
+
 ## Entwicklung
 
 ```bash

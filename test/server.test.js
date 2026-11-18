@@ -138,6 +138,67 @@ test('ohne vorgegebenes Token wird eines erzeugt und gemerkt', async () => {
   }
 });
 
+test('benannte Zugänge: anlegen, nutzen, zählen, sperren, löschen', async () => {
+  const s = await starten({ DOWNLOAD_TOKEN: 'go-token' });
+  const mit = (body, methode = 'POST') => ({ method: methode, headers: { ...s.admin, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const ordner = join(s.konfig.pfade.pakete, 'li');
+    mkdirSync(ordner, { recursive: true });
+    writeFileSync(join(ordner, 'li.pmtiles'), '0123456789');
+    s.zustand.pakete.li = {
+      id: 'li', name: 'Liechtenstein', regionen: [], status: 'fertig',
+      manifest: { id: 'li', name: 'Liechtenstein', bounds: [9.47, 47.04, 9.64, 47.27], gebaut: '2026-10-11T00:00:00Z', regionen: [], artefakte: { karte: { datei: 'li.pmtiles', bytes: 10, sha256: 'abc' } } },
+    };
+
+    assert.equal((await s.holen('/api/zugaenge', { method: 'POST', body: '{"name":"X"}' })).status, 401, 'nur für den Admin');
+    assert.equal((await s.holen('/api/zugaenge', mit({ name: '' }))).status, 400);
+    const neu = await s.holen('/api/zugaenge', mit({ name: 'CarNine' }));
+    assert.equal(neu.status, 201);
+    const z = await neu.json();
+    assert.equal(z.id, 'carnine');
+    assert.equal(z.aktiv, true);
+    assert.ok(Buffer.from(z.token, 'base64url').length >= 24);
+    assert.equal(z.hash, undefined);
+    assert.equal((await s.holen('/api/zugaenge', mit({ name: 'CarNine' }))).status, 409);
+
+    // Nur der Hash liegt im Zustand
+    const gespeichert = new Zustand(s.konfig.pfade.zustand).zugaenge.carnine;
+    assert.ok(gespeichert.hash);
+    assert.doesNotMatch(JSON.stringify(gespeichert), new RegExp(z.token));
+
+    const bearer = { Authorization: `Bearer ${z.token}` };
+    assert.equal((await s.holen('/v1/katalog', { headers: bearer })).status, 200);
+    assert.equal((await s.holen('/v1/katalog', { headers: { Authorization: 'Bearer go-token' } })).status, 200, 'Haupt-Token geht weiter');
+    assert.equal((await s.holen('/v1/katalog', { headers: { Authorization: `Bearer ${z.token}x` } })).status, 401);
+    assert.equal(await (await s.holen(`/v1/pakete/li/li.pmtiles?token=${z.token}`)).text(), '0123456789');
+    await (await s.holen('/v1/pakete/li/li.pmtiles', { headers: { ...bearer, Range: 'bytes=6-' } })).text();
+    await s.holen('/v1/pakete/li/li.pmtiles', { method: 'HEAD', headers: bearer });
+
+    const [liste] = await (await s.holen('/api/zugaenge', { headers: s.admin })).json();
+    assert.equal(liste.katalogAbrufe, 1);
+    assert.equal(liste.downloads, 2);
+    assert.equal(liste.bytes, 14);
+    assert.ok(liste.letzteNutzung);
+    assert.equal(liste.hash, undefined);
+    // entprellt: noch nicht auf der Platte, nach speichern() schon
+    assert.equal(new Zustand(s.konfig.pfade.zustand).zugaenge.carnine.downloads, 0);
+    assert.ok(s.zustand.speicherTimer);
+    s.zustand.speichern();
+    assert.equal(new Zustand(s.konfig.pfade.zustand).zugaenge.carnine.downloads, 2);
+
+    assert.equal((await s.holen('/api/zugaenge/carnine', mit({ aktiv: 'nein' }, 'PATCH'))).status, 400);
+    assert.equal((await s.holen('/api/zugaenge/carnine', mit({ aktiv: false }, 'PATCH'))).status, 200);
+    assert.equal((await s.holen('/v1/katalog', { headers: bearer })).status, 401, 'gesperrt');
+    assert.equal((await s.holen('/api/zugaenge/carnine', mit({ aktiv: true }, 'PATCH'))).status, 200);
+    assert.equal((await s.holen('/v1/katalog', { headers: bearer })).status, 200, 'wieder entsperrt');
+    assert.equal((await s.holen('/api/zugaenge/carnine', { method: 'DELETE', headers: s.admin })).status, 200);
+    assert.equal((await s.holen('/v1/katalog', { headers: bearer })).status, 401, 'gelöscht');
+    assert.equal((await s.holen('/api/zugaenge/carnine', { method: 'DELETE', headers: s.admin })).status, 404);
+  } finally {
+    await s.ende();
+  }
+});
+
 test('Hilfen', () => {
   assert.deepEqual(bereichAus('bytes=0-3', 10), { start: 0, ende: 3 });
   assert.deepEqual(bereichAus('bytes=-4', 10), { start: 6, ende: 9 });
